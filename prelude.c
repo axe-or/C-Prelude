@@ -489,12 +489,34 @@ String str_trim_trailing(String s, String cutset){
 
 	return str_sub(s, 0, cut_until);
 }
+//// Logger ////////////////////////////////////////////////////////////////////
+i32 log_ex_str(Logger l, String message, Source_Location loc, u8 level_n){
+    i32 n = l.log_func(l.impl, message, loc, level_n);
+	if(level_n == Log_Fatal){
+		panic("Fatal error");
+	}
+	return n;
+}
 
+i32 log_ex_cstr(Logger l, cstring message, Source_Location loc, u8 level_n){
+    return log_ex_str(l, str_from(message), loc, level_n);
+}
+
+static i32 _console_logger_func(void* impl, String message, Source_Location location, u8 level_n){
+    (void)impl;
+    enum Log_Level level = level;
+    cstring header = log_level_map[level_n];
+    i32 n = printf("[%-5s - %.*s:%d %.*s] %.*s\n", header, fmt_bytes(location.filename), location.line, fmt_bytes(location.caller_name), fmt_bytes(message));
+    return n;
+}
+
+Logger log_create_console_logger(){
+    return (Logger){
+        .impl = null,
+        .log_func = _console_logger_func,
+    };
+}
 //// Arena Allocator ///////////////////////////////////////////////////////////
-#include "arena_allocator.h"
-
-#include "./assert.h"
-
 static
 uintptr arena_required_mem(uintptr cur, isize nbytes, isize align){
 	debug_assert(mem_valid_alignment(align), "Alignment must be a power of 2");

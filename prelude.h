@@ -10,7 +10,10 @@
 #include <stdalign.h>
 #include <stdbool.h>
 #include <stdnoreturn.h>
+#include <stdatomic.h>
 #include <limits.h>
+
+#define null NULL
 
 typedef int8_t  i8;
 typedef int16_t i16;
@@ -233,6 +236,8 @@ bool utf8_iter_prev(UTF8_Iterator* iter, rune* r, i8* len);
 //// Strings ///////////////////////////////////////////////////////////////////
 typedef struct String String;
 
+#define str_lit(CstrLit) (String){ .data = (byte const*)(CstrLit), .len = sizeof(CstrLit) }
+
 struct String {
 	byte const * data;
 	isize len;
@@ -295,6 +300,86 @@ UTF8_Iterator str_iterator_reversed(String s);
 
 // Is string empty?
 bool str_empty(String s);
+
+//// Source Location ///////////////////////////////////////////////////////////
+typedef struct Source_Location Source_Location;
+
+struct Source_Location {
+    String filename;
+    String caller_name;
+    i32 line;
+};
+
+#define this_location() this_location_()
+
+#define this_location_() (Source_Location){ \
+    .filename = str_lit(__FILE__), \
+    .caller_name = str_lit(__func__), \
+    .line = __LINE__, \
+}
+
+//// Logger ////////////////////////////////////////////////////////////////////
+typedef struct Logger Logger;
+
+typedef i32 (*Logger_Func)(
+    void* impl,
+    String message,
+    Source_Location location,
+    u8 level
+);
+
+enum Log_Level {
+    Log_Debug = 0,
+    Log_Info = 1,
+    Log_Warn = 2,
+    Log_Error = 3,
+    Log_Fatal = 4,
+};
+
+static const cstring log_level_map[] = {
+    [Log_Debug] = "DEBUG",
+    [Log_Info] = "INFO",
+    [Log_Warn] = "WARN",
+    [Log_Error] = "ERROR",
+    [Log_Fatal] = "FATAL",
+};
+
+struct Logger {
+    void* impl;
+    Logger_Func log_func;
+};
+
+// Log(explicit) using string
+i32 log_ex_str(Logger l, String message, Source_Location loc, u8 level_n);
+
+// Log(explicit) using cstring
+i32 log_ex_cstr(Logger l, cstring message, Source_Location loc, u8 level_n);
+
+// Log (explicit), generic version
+#define log_ex(LoggerObj, Msg, Loc, Level) \
+    _Generic((Msg),  \
+    cstring: log_ex_cstr, \
+    char* : log_ex_cstr, \
+    String: log_ex_str)(LoggerObj, Msg, Loc, Level)
+
+// Create a logger that prints to stdout
+Logger log_create_console_logger();
+
+// Log Helper (info)
+#define log_info(LoggerObj, Msg) log_ex((LoggerObj), (Msg), this_location(), Log_Info)
+
+// Log Helper (debug)
+#define log_debug(LoggerObj, Msg) log_ex((LoggerObj), (Msg), this_location(), Log_Debug)
+
+// Log Helper (warn)
+#define log_warn(LoggerObj, Msg) log_ex((LoggerObj), (Msg), this_location(), Log_Warn)
+
+// Log Helper (error)
+#define log_error(LoggerObj, Msg) log_ex((LoggerObj), (Msg), this_location(), Log_Error)
+
+// Log Helper (fatal)
+#define log_fatal(LoggerObj, Msg) log_ex((LoggerObj), (Msg), this_location(), Log_Fatal)
+
 
 //// Arena Allocator ///////////////////////////////////////////////////////////
 typedef struct Mem_Arena Mem_Arena;
