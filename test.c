@@ -1,8 +1,6 @@
 #include "prelude.h"
 #include <stdio.h>
 
-
-
 int main(){
     Source_Location loc = this_location();
     printf("%.*s : %d %.*s\n", fmt_bytes(loc.filename), loc.line, fmt_bytes(loc.caller_name));
