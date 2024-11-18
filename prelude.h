@@ -25,7 +25,7 @@ typedef size_t    usize;
 
 typedef uintptr_t uintptr;
 
-typedef float f32;
+typedef float  f32;
 typedef double f64;
 
 typedef char const * cstring;
@@ -42,10 +42,6 @@ void swap_bytes_raw(byte* data, isize len){
 
 #define swap_bytes(Ptr) swap_bytes_raw((byte*)(Ptr), sizeof(*(Ptr)))
 
-_Static_assert(sizeof(f32) == 4 && sizeof(f64) == 8, "Bad float size");
-_Static_assert(sizeof(isize) == sizeof(usize), "Mismatched (i/u)size");
-_Static_assert(CHAR_BIT == 8, "Invalid char size");
-
 #define min(A, B) ((A) < (B) ? (A) : (B))
 #define max(A, B) ((A) > (B) ? (A) : (B))
 #define clamp(Lo, X, Hi) min(max(Lo, X), Hi)
@@ -56,7 +52,35 @@ _Static_assert(CHAR_BIT == 8, "Invalid char size");
 #ifndef __cplusplus
 #undef bool
 typedef _Bool bool;
+#define static_assert(Pred, Msg) _Static_assert(Pred, Msg)
 #endif
+
+static_assert(sizeof(f32) == 4 && sizeof(f64) == 8, "Bad float size");
+static_assert(sizeof(isize) == sizeof(usize), "Mismatched (i/u)size");
+static_assert(CHAR_BIT == 8, "Invalid char size");
+
+//// Spinlock //////////////////////////////////////////////////////////////////
+#define SPINLOCK_LOCKED 1
+#define SPINLOCK_UNLOCKED 0
+
+// The zeroed state of a spinlock is unlocked, to be effective across threads
+// it's important to keep the spinlock outside of the stack and never mark it as
+// a thread_local struct.
+typedef struct {
+	atomic_int _state;
+} Spinlock;
+
+// Enter a busy wait loop until spinlock is acquired(locked)
+void spinlock_acquire(Spinlock* l);
+
+// Try to lock spinlock, if failed, just move on. Returns if lock was locked.
+bool spinlock_try_acquire(Spinlock* l);
+
+// Release(unlock) the spinlock
+void spinlock_release(Spinlock* l);
+
+#define spinlock_guard(LockPtr, Scope) \
+	do { spinlock_acquire(LockPtr); do { Scope } while(0); spinlock_release(LockPtr); } while(0)
 
 //// Assert ////////////////////////////////////////////////////////////////////
 // Crash if `pred` is false, this is disabled in non-debug builds
