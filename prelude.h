@@ -1,3 +1,8 @@
+// TODO: Arena resize
+// TODO: Pool Allocator
+// TODO: Heap Allocator
+// TODO: String builder
+
 #pragma once
 //// Essentials ////////////////////////////////////////////////////////////////
 #include <stddef.h>
