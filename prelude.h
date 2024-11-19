@@ -1,4 +1,3 @@
-// TODO: Arena resize
 // TODO: Pool Allocator
 // TODO: Heap Allocator
 // TODO: String builder
@@ -408,3 +407,25 @@ void *arena_alloc(Mem_Arena* a, isize size, isize align);
 
 // Get arena as a conforming instance to the allocator interface
 Mem_Allocator arena_allocator(Mem_Arena* a);
+
+/// Pool Allocator /////////////////////////////////////////////////////////////
+typedef struct Mem_Pool_Allocator Mem_Pool_Allocator;
+typedef struct Mem_Pool_Node Mem_Pool_Node;
+
+struct Mem_Pool_Node {
+	Mem_Pool_Node* next;
+};
+
+struct Mem_Pool_Allocator {
+	void* data;
+	isize capacity;
+	isize pool_size;
+	isize pool_align;
+	Mem_Pool_Node* free_list;
+};
+
+void* pool_alloc(Mem_Pool_Allocator* a);
+
+void* pool_free(Mem_Pool_Allocator* a, void* ptr);
+
+void* pool_free_all(Mem_Pool_Allocator* a, void* ptr);

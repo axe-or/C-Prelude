@@ -543,7 +543,6 @@ void *arena_alloc(Mem_Arena* a, isize size, isize align){
 	return allocation;
 }
 
-
 void arena_free_all(Mem_Arena* a){
 	a->offset = 0;
 }
@@ -620,3 +619,6 @@ void arena_destroy(Mem_Arena* a){
 	a->capacity = 0;
 	a->data = null;
 }
+
+/// Pool Allocator /////////////////////////////////////////////////////////////
+
