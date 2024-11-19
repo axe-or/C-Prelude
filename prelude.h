@@ -387,6 +387,7 @@ typedef struct Mem_Arena Mem_Arena;
 struct Mem_Arena {
 	isize offset;
 	isize capacity;
+	uintptr last_allocation;
 	byte* data;
 };
 
@@ -395,6 +396,15 @@ void arena_init(Mem_Arena* a, byte* data, isize len);
 
 // Deinit the arena
 void arena_destroy(Mem_Arena *a);
+
+// Resize arena allocation in-place, gives back same pointer on success, null on failure
+void* arena_resize(Mem_Arena* a, void* ptr, isize new_size);
+
+// Reset arena, marking all its owned pointers as freed
+void arena_free_all(Mem_Arena* a);
+
+// Allocate `size` bytes aligned to `align`, return null on failure
+void *arena_alloc(Mem_Arena* a, isize size, isize align);
 
 // Get arena as a conforming instance to the allocator interface
 Mem_Allocator arena_allocator(Mem_Arena* a);

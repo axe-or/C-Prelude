@@ -90,27 +90,27 @@ uintptr align_forward_size(isize p, isize a){
 }
 
 i32 allocator_query_capabilites(Mem_Allocator allocator, i32* capabilities){
-	if(capabilities == NULL){ return 0; }
-	allocator.func(allocator.data, Mem_Op_Query, NULL, 0, 0, capabilities);
+	if(capabilities == null){ return 0; }
+	allocator.func(allocator.data, Mem_Op_Query, null, 0, 0, capabilities);
 	return *capabilities;
 }
 
 void* mem_alloc(Mem_Allocator allocator, isize size, isize align){
-	void* ptr = allocator.func(allocator.data, Mem_Op_Alloc, NULL, size, align, NULL);
-	if(ptr != NULL){
+	void* ptr = allocator.func(allocator.data, Mem_Op_Alloc, null, size, align, null);
+	if(ptr != null){
 		mem_set(ptr, 0, size);
 	}
 	return ptr;
 }
 
 void* mem_resize(Mem_Allocator allocator, void* ptr, isize new_size){
-	void* new_ptr = allocator.func(allocator.data, Mem_Op_Resize, ptr, new_size, 0, NULL);
+	void* new_ptr = allocator.func(allocator.data, Mem_Op_Resize, ptr, new_size, 0, null);
 	return new_ptr;
 }
 
 void mem_free_ex(Mem_Allocator allocator, void* p, isize size, isize align){
-	if(p == NULL){ return; }
-	allocator.func(allocator.data, Mem_Op_Free, p, size, align, NULL);
+	if(p == null){ return; }
+	allocator.func(allocator.data, Mem_Op_Free, p, size, align, null);
 }
 
 void mem_free(Mem_Allocator allocator, void* p){
@@ -118,7 +118,7 @@ void mem_free(Mem_Allocator allocator, void* p){
 }
 
 void mem_free_all(Mem_Allocator allocator){
-	allocator.func(allocator.data, Mem_Op_Free_All, NULL, 0, 0, NULL);
+	allocator.func(allocator.data, Mem_Op_Free_All, null, 0, 0, null);
 }
 
 //// UTF-8 /////////////////////////////////////////////////////////////////////
@@ -188,7 +188,7 @@ static const UTF8_Decode_Result DECODE_ERROR = { .codepoint = UTF8_ERROR, .len =
 
 UTF8_Decode_Result utf8_decode(byte const* buf, isize len){
 	UTF8_Decode_Result res = {0};
-	if(buf == NULL || len <= 0){ return DECODE_ERROR; }
+	if(buf == null || len <= 0){ return DECODE_ERROR; }
 
 	u8 first = buf[0];
 
@@ -277,7 +277,7 @@ bool utf8_iter_prev(UTF8_Iterator* iter, rune* r, i8* len){
 
 //// Strings ///////////////////////////////////////////////////////////////////
 bool str_empty(String s){
-	return s.len == 0 || s.data == NULL;
+	return s.len == 0 || s.data == null;
 }
 
 String str_from(cstring data){
@@ -299,7 +299,7 @@ String str_from_bytes(byte const* data, isize length){
 String str_concat(String a, String b, Mem_Allocator allocator){
 	byte* data = mem_new(byte, a.len + b.len, allocator);
 	String s = {0};
-	if(data != NULL){
+	if(data != null){
 		mem_copy(&data[0], a.data, a.len);
 		mem_copy(&data[a.len], b.data, b.len);
 		s.data = data;
@@ -356,7 +356,7 @@ String str_sub(String s, isize start, isize byte_count){
 
 String str_clone(String s, Mem_Allocator allocator){
 	char* mem = mem_new(char, s.len, allocator);
-	if(mem == NULL){ return (String){0}; }
+	if(mem == null){ return (String){0}; }
 	return (String){
 		.data = (byte const *)mem,
 		.len = s.len,
@@ -526,7 +526,6 @@ uintptr arena_required_mem(uintptr cur, isize nbytes, isize align){
 	return required;
 }
 
-static
 void *arena_alloc(Mem_Arena* a, isize size, isize align){
 	uintptr base = (uintptr)a->data;
 	uintptr current = (uintptr)base + (uintptr)a->offset;
@@ -535,15 +534,16 @@ void *arena_alloc(Mem_Arena* a, isize size, isize align){
 	uintptr required = arena_required_mem(current, size, align);
 
 	if(required > available){
-		return NULL;
+		return null;
 	}
 
 	a->offset += required;
 	void* allocation = &a->data[a->offset - size];
+	a->last_allocation = (uintptr)allocation;
 	return allocation;
 }
 
-static
+
 void arena_free_all(Mem_Arena* a){
 	a->offset = 0;
 }
@@ -569,16 +569,36 @@ void* arena_allocator_func(
 			arena_free_all(a);
 		} break;
 
-		case Mem_Op_Resize: {} break;
+		case Mem_Op_Resize: {
+			return arena_resize(a, old_ptr, size);
+		} break;
 
 		case Mem_Op_Free: {} break;
 
 		case Mem_Op_Query: {
-			*capabilities = Allocator_Alloc_Any | Allocator_Free_All | Allocator_Align_Any;
+			*capabilities = Allocator_Alloc_Any | Allocator_Free_All | Allocator_Align_Any | Allocator_Resize;
 		} break;
 	}
 
-	return NULL;
+	return null;
+}
+
+void* arena_resize(Mem_Arena* a, void* ptr, isize new_size){
+	if((uintptr)ptr == a->last_allocation){
+		uintptr base = (uintptr)a->data;
+		uintptr current = base + (uintptr)a->offset;
+		uintptr limit = base + (uintptr)a->capacity;
+		isize last_allocation_size = current - a->last_allocation;
+		
+		if((current - last_allocation_size + new_size) > limit){
+			return null; /* No space left*/
+		}
+
+		a->offset += new_size - last_allocation_size;
+		return ptr;
+	}
+
+	return null;
 }
 
 Mem_Allocator arena_allocator(Mem_Arena* a){
@@ -598,5 +618,5 @@ void arena_init(Mem_Arena* a, byte* data, isize len){
 void arena_destroy(Mem_Arena* a){
 	arena_free_all(a);
 	a->capacity = 0;
-	a->data = NULL;
+	a->data = null;
 }
