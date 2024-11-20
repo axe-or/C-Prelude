@@ -1,1 +1,2 @@
 -std=c11
+-D_XOPEN_SOURCE=500

@@ -506,7 +506,7 @@ static i32 _console_logger_func(void* impl, String message, Source_Location loca
     (void)impl;
     enum Log_Level level = level;
     cstring header = log_level_map[level_n];
-    i32 n = printf("[%-5s - %.*s:%d %.*s] %.*s\n", header, fmt_bytes(location.filename), location.line, fmt_bytes(location.caller_name), fmt_bytes(message));
+    i32 n = printf("[%-5s %.*s:%d %.*s] %.*s\n", header, fmt_bytes(location.filename), location.line, fmt_bytes(location.caller_name), fmt_bytes(message));
     return n;
 }
 
