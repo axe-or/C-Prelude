@@ -1,9 +1,15 @@
-#include "prelude.h"
+#ifndef _XOPEN_SOURCE
+#define _XO_XOPEN_SOURCE 600
+#endif
 
-//// Assert ////////////////////////////////////////////////////////////////////
+#include "prelude.h"
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdlib.h>
+#include <time.h>
 
+//// Assert ////////////////////////////////////////////////////////////////////
 void debug_assert_ex(bool pred, cstring msg, Source_Location loc){
 	#ifdef NDEBUG
 		(void)pred; (void)msg;
@@ -632,6 +638,44 @@ void arena_destroy(Mem_Arena* a){
 	a->capacity = 0;
 	a->data = null;
 }
+
+//// Time //////////////////////////////////////////////////////////////////////
+Time_Point time_now(){
+	struct timespec spec = {0};
+	Time_Point p = {0};
+
+	if(clock_gettime(CLOCK_REALTIME, &spec) < 0){
+		return p;
+	}
+
+	p._nsec = ((i64)spec.tv_nsec) + ((i64)spec.tv_sec * 1000000000ll);
+	return p;
+}
+
+Time_Duration time_point_diff(Time_Point a, Time_Point b){
+	return (Time_Duration){a._nsec - b._nsec};
+}
+
+Time_Duration time_duration_diff(Time_Duration a, Time_Duration b){
+	return a - b;
+}
+
+Time_Duration time_since(Time_Point p){
+	Time_Point now = time_now();
+	return time_diff(now, p);
+}
+
+void time_sleep(Time_Duration d){
+	struct timespec spec = {0};
+	spec.tv_sec = d / time_second;
+	spec.tv_nsec = d % time_second;
+
+	while(1){
+		bool ok = nanosleep(&spec, &spec) >= 0;
+		if(ok && (errno != EINTR)) break;
+	}
+}
+
 
 /// Pool Allocator /////////////////////////////////////////////////////////////
 

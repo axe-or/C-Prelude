@@ -66,7 +66,6 @@ static_assert(sizeof(f32) == 4 && sizeof(f64) == 8, "Bad float size");
 static_assert(sizeof(isize) == sizeof(usize), "Mismatched (i/u)size");
 static_assert(CHAR_BIT == 8, "Invalid char size");
 
-
 //// Spinlock //////////////////////////////////////////////////////////////////
 #define SPINLOCK_LOCKED 1
 #define SPINLOCK_UNLOCKED 0
@@ -170,6 +169,34 @@ void mem_free(Mem_Allocator allocator, void* p);
 
 // Free all pointers owned by allocator
 void mem_free_all(Mem_Allocator allocator);
+
+//// Arena Allocator ///////////////////////////////////////////////////////////
+typedef struct Mem_Arena Mem_Arena;
+
+struct Mem_Arena {
+	isize offset;
+	isize capacity;
+	uintptr last_allocation;
+	byte* data;
+};
+
+// Initialize a memory arena with a buffer
+void arena_init(Mem_Arena* a, byte* data, isize len);
+
+// Deinit the arena
+void arena_destroy(Mem_Arena *a);
+
+// Resize arena allocation in-place, gives back same pointer on success, null on failure
+void* arena_resize(Mem_Arena* a, void* ptr, isize new_size);
+
+// Reset arena, marking all its owned pointers as freed
+void arena_free_all(Mem_Arena* a);
+
+// Allocate `size` bytes aligned to `align`, return null on failure
+void *arena_alloc(Mem_Arena* a, isize size, isize align);
+
+// Get arena as a conforming instance to the allocator interface
+Mem_Allocator arena_allocator(Mem_Arena* a);
 
 //// UTF-8 /////////////////////////////////////////////////////////////////////
 typedef i32 rune;
@@ -409,32 +436,40 @@ Logger log_console_logger(Console_Logger* cl, u32 options);
 // Log Helper (fatal)
 #define log_fatal(LoggerObj, Msg) log_ex((LoggerObj), (Msg), this_location(), Log_Fatal)
 
-//// Arena Allocator ///////////////////////////////////////////////////////////
-typedef struct Mem_Arena Mem_Arena;
+//// Time //////////////////////////////////////////////////////////////////////
+typedef struct Time_Point Time_Point;
 
-struct Mem_Arena {
-	isize offset;
-	isize capacity;
-	uintptr last_allocation;
-	byte* data;
+// Difference between 2 time points (in nanoseconds)
+typedef i64 Time_Duration;
+
+// UNIX Epoch scaled to nanosecond precision
+struct Time_Point {
+	i64 _nsec;
 };
 
-// Initialize a memory arena with a buffer
-void arena_init(Mem_Arena* a, byte* data, isize len);
+// Get current system Time_Point
+Time_Point time_now();
 
-// Deinit the arena
-void arena_destroy(Mem_Arena *a);
+// Sleep current thread for a duration
+void time_sleep(Time_Duration d);
 
-// Resize arena allocation in-place, gives back same pointer on success, null on failure
-void* arena_resize(Mem_Arena* a, void* ptr, isize new_size);
+// Time since timepoint
+Time_Duration time_since(Time_Point p);
 
-// Reset arena, marking all its owned pointers as freed
-void arena_free_all(Mem_Arena* a);
+// Time difference
+Time_Duration time_point_diff(Time_Point a, Time_Point b);
+Time_Duration time_duration_diff(Time_Duration a, Time_Duration b);
 
-// Allocate `size` bytes aligned to `align`, return null on failure
-void *arena_alloc(Mem_Arena* a, isize size, isize align);
+// Time constants, as a multiple of durations
+#define time_nanosecond  ((i64)1ll)
+#define time_microsecond ((i64)1000ll)
+#define time_millisecond ((i64)1000000ll)
+#define time_second      ((i64)1000000000ll)
+#define time_minute      ((i64)(60ll * 1000000000ll))
+#define time_hour        ((i64)(3600ll * 1000000000ll))
 
-// Get arena as a conforming instance to the allocator interface
-Mem_Allocator arena_allocator(Mem_Arena* a);
+#define time_diff(A, B) _Generic((A), \
+	Time_Duration: time_duration_diff, \
+	Time_Point: time_point_diff)(A, B)
 
-/// Pool Allocator /////////////////////////////////////////////////////////////
+//// Pool Allocator ////////////////////////////////////////////////////////////

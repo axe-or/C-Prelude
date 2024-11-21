@@ -1,5 +1,5 @@
 cc='gcc -std=c11'
-cflags='-fPIC -g -fno-strict-aliasing -Wall -Wextra'
+cflags='-D_XOPEN_SOURCE=500 -fPIC -g -fno-strict-aliasing -Wall -Wextra'
 ignoreflags='-Wno-unused-label'
 ldflags=''
 
