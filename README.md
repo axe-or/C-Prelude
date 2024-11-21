@@ -6,5 +6,6 @@ Main features:
 - Saner type definitions
 - Strings with basic UTF-8 support
 - Custom memory allocators that can be swapped out
+- Logger interface
 - Spinlock for quick locking
 
