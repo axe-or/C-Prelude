@@ -332,6 +332,30 @@ struct Source_Location {
     .line = __LINE__, \
 }
 
+//// String Builder ////////////////////////////////////////////////////////////
+typedef struct String_Builder String_Builder;
+
+struct String_Builder {
+	byte* data;
+	isize len;
+	isize cap;
+	Mem_Allocator allocator;
+};
+
+bool sb_init(String_Builder* sb, Mem_Allocator allocator, isize initial_cap);
+
+void sb_destroy(String_Builder* sb);
+
+void sb_delete_bytes(String_Builder *sb, isize idx, isize n);
+
+void sb_delete_runes(String_Builder *sb, isize idx, isize n);
+
+// bool sb_append_string(String_Builder *sb, String s);
+// bool sb_append_rune(String_Builder *sb, rune r);
+// bool sb_append_integer(String_Builder *sb, i64 n);
+// bool sb_append_real(String_Builder *sb, f64 n);
+
+
 //// Assert ////////////////////////////////////////////////////////////////////
 // Crash if `pred` is false, this is disabled in non-debug builds
 void debug_assert_ex(bool pred, cstring msg, Source_Location loc);
@@ -343,14 +367,12 @@ void panic_assert_ex(bool pred, cstring msg, Source_Location loc);
 
 #define panic_assert(Pred, Msg) panic_assert_ex(Pred, Msg, this_location())
 
-
 // Crash the program with a fatal error
 noreturn void panic(char * const msg);
 
 // Crash the program due to unimplemented code paths, this should *only* be used
 // during development
 noreturn void unimplemented();
-
 
 //// Logger ////////////////////////////////////////////////////////////////////
 typedef struct Logger Logger;

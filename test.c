@@ -1,6 +1,4 @@
 #include "prelude.h"
-#include <stdio.h>
-#include <time.h>
 
 #define ARENA_MEM_SIZE (4096ll * 4096ll)
 static byte ARENA_MEMORY[ARENA_MEM_SIZE];
