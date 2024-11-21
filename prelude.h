@@ -66,6 +66,7 @@ static_assert(sizeof(f32) == 4 && sizeof(f64) == 8, "Bad float size");
 static_assert(sizeof(isize) == sizeof(usize), "Mismatched (i/u)size");
 static_assert(CHAR_BIT == 8, "Invalid char size");
 
+
 //// Spinlock //////////////////////////////////////////////////////////////////
 #define SPINLOCK_LOCKED 1
 #define SPINLOCK_UNLOCKED 0
@@ -88,20 +89,6 @@ void spinlock_release(Spinlock* l);
 
 #define spinlock_guard(LockPtr, Scope) \
 	do { spinlock_acquire(LockPtr); do { Scope } while(0); spinlock_release(LockPtr); } while(0)
-
-//// Assert ////////////////////////////////////////////////////////////////////
-// Crash if `pred` is false, this is disabled in non-debug builds
-void debug_assert(bool pred, cstring msg);
-
-// Crash if `pred` is false, this is always enabled
-void panic_assert(bool pred, cstring msg);
-
-// Crash the program with a fatal error
-noreturn void panic(char * const msg);
-
-// Crash the program due to unimplemented code paths, this should *only* be used
-// during development
-noreturn void unimplemented();
 
 //// Memory ////////////////////////////////////////////////////////////////////
 typedef struct Bytes Bytes;
@@ -302,30 +289,61 @@ bool str_empty(String s);
 
 //// Source Location ///////////////////////////////////////////////////////////
 typedef struct Source_Location Source_Location;
+typedef enum Logger_Option Logger_Option;
 
 struct Source_Location {
-    String filename;
-    String caller_name;
+    cstring filename;
+    cstring caller_name;
     i32 line;
 };
 
 #define this_location() this_location_()
 
 #define this_location_() (Source_Location){ \
-    .filename = str_lit(__FILE__), \
-    .caller_name = str_lit(__func__), \
+    .filename = __FILE__, \
+    .caller_name = __func__, \
     .line = __LINE__, \
 }
 
+//// Assert ////////////////////////////////////////////////////////////////////
+// Crash if `pred` is false, this is disabled in non-debug builds
+void debug_assert_ex(bool pred, cstring msg, Source_Location loc);
+
+#define debug_assert(Pred, Msg) debug_assert_ex(Pred, Msg, this_location())
+
+// Crash if `pred` is false, this is always enabled
+void panic_assert_ex(bool pred, cstring msg, Source_Location loc);
+
+#define panic_assert(Pred, Msg) panic_assert_ex(Pred, Msg, this_location())
+
+
+// Crash the program with a fatal error
+noreturn void panic(char * const msg);
+
+// Crash the program due to unimplemented code paths, this should *only* be used
+// during development
+noreturn void unimplemented();
+
+
 //// Logger ////////////////////////////////////////////////////////////////////
 typedef struct Logger Logger;
+typedef struct Console_Logger Console_Logger;
 
 typedef i32 (*Logger_Func)(
     void* impl,
     String message,
-    Source_Location location,
-    u8 level
+	u32 options,
+    u8 level,
+    Source_Location location
 );
+
+enum Logger_Option {
+	Logger_Date      = 1 << 0,
+	Logger_Time      = 1 << 1,
+	Logger_Caller    = 1 << 2,
+	Logger_Filename  = 1 << 3,
+	Logger_Use_Color = 1 << 4,
+};
 
 enum Log_Level {
     Log_Debug = 0,
@@ -346,6 +364,12 @@ static const cstring log_level_map[] = {
 struct Logger {
     void* impl;
     Logger_Func log_func;
+	u32 options;
+};
+
+struct Console_Logger {
+	// TODO: allow std/stderr distinctino
+	Mem_Allocator parent_allocator;
 };
 
 // Log(explicit) using string
@@ -362,7 +386,13 @@ i32 log_ex_cstr(Logger l, cstring message, Source_Location loc, u8 level_n);
     String: log_ex_str)(LoggerObj, Msg, Loc, Level)
 
 // Create a logger that prints to stdout
-Logger log_create_console_logger();
+Console_Logger* log_create_console_logger(Mem_Allocator allocator);
+
+// Destroy console logger
+void log_destroy_console_logger(Console_Logger* cl);
+
+// Get the Logger interface from a console logger
+Logger log_console_logger(Console_Logger* cl, u32 options);
 
 // Log Helper (info)
 #define log_info(LoggerObj, Msg) log_ex((LoggerObj), (Msg), this_location(), Log_Info)
@@ -378,7 +408,6 @@ Logger log_create_console_logger();
 
 // Log Helper (fatal)
 #define log_fatal(LoggerObj, Msg) log_ex((LoggerObj), (Msg), this_location(), Log_Fatal)
-
 
 //// Arena Allocator ///////////////////////////////////////////////////////////
 typedef struct Mem_Arena Mem_Arena;
@@ -409,23 +438,3 @@ void *arena_alloc(Mem_Arena* a, isize size, isize align);
 Mem_Allocator arena_allocator(Mem_Arena* a);
 
 /// Pool Allocator /////////////////////////////////////////////////////////////
-typedef struct Mem_Pool_Allocator Mem_Pool_Allocator;
-typedef struct Mem_Pool_Node Mem_Pool_Node;
-
-struct Mem_Pool_Node {
-	Mem_Pool_Node* next;
-};
-
-struct Mem_Pool_Allocator {
-	void* data;
-	isize capacity;
-	isize pool_size;
-	isize pool_align;
-	Mem_Pool_Node* free_list;
-};
-
-void* pool_alloc(Mem_Pool_Allocator* a);
-
-void* pool_free(Mem_Pool_Allocator* a, void* ptr);
-
-void* pool_free_all(Mem_Pool_Allocator* a, void* ptr);

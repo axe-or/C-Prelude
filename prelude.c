@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void debug_assert(bool pred, cstring msg){
+void debug_assert_ex(bool pred, cstring msg, Source_Location loc){
 	#ifdef NDEBUG
 		(void)pred; (void)msg;
 	#else
@@ -15,9 +15,9 @@ void debug_assert(bool pred, cstring msg){
 	#endif
 }
 
-void panic_assert(bool pred, cstring msg){
+void panic_assert_ex(bool pred, cstring msg, Source_Location loc){
 	if(!pred){
-		fprintf(stderr, "Failed assert: %s\n", msg);
+		fprintf(stderr, "[%s:%d %s()] Failed assert: %s\n", loc.filename, loc.line, loc.caller_name, msg);
 		abort();
 	}
 }
@@ -491,7 +491,7 @@ String str_trim_trailing(String s, String cutset){
 }
 //// Logger ////////////////////////////////////////////////////////////////////
 i32 log_ex_str(Logger l, String message, Source_Location loc, u8 level_n){
-    i32 n = l.log_func(l.impl, message, loc, level_n);
+    i32 n = l.log_func(l.impl, message, l.options, level_n, loc);
 	if(level_n == Log_Fatal){
 		panic("Fatal error");
 	}
@@ -502,20 +502,33 @@ i32 log_ex_cstr(Logger l, cstring message, Source_Location loc, u8 level_n){
     return log_ex_str(l, str_from(message), loc, level_n);
 }
 
-static i32 _console_logger_func(void* impl, String message, Source_Location location, u8 level_n){
+static i32 _console_logger_func(void* impl, String message, u32 options, u8 level_n, Source_Location location){
     (void)impl;
     enum Log_Level level = level;
     cstring header = log_level_map[level_n];
-    i32 n = printf("[%-5s %.*s:%d %.*s] %.*s\n", header, fmt_bytes(location.filename), location.line, fmt_bytes(location.caller_name), fmt_bytes(message));
+    i32 n = printf("[%-5s %s:%d %s] %.*s\n", header, location.filename, location.line, location.caller_name, fmt_bytes(message));
     return n;
 }
 
-Logger log_create_console_logger(){
-    return (Logger){
-        .impl = null,
-        .log_func = _console_logger_func,
-    };
+Console_Logger* log_create_console_logger(Mem_Allocator allocator){
+	Console_Logger* cl = mem_new(Console_Logger, 1, allocator);
+	if(cl == null){	return null; }
+	cl->parent_allocator = allocator;
+	return cl;
 }
+
+void log_destroy_console_logger(Console_Logger* cl){
+	mem_free_ex(cl->parent_allocator, cl, sizeof(*cl), alignof(*cl));
+}
+
+Logger log_console_logger(Console_Logger* cl,u32 options){
+	Logger logger = {0};
+	logger.impl = cl;
+	logger.options = options;
+	logger.log_func = _console_logger_func;
+	return logger;
+}
+
 //// Arena Allocator ///////////////////////////////////////////////////////////
 static
 uintptr arena_required_mem(uintptr cur, isize nbytes, isize align){

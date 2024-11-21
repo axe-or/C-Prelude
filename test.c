@@ -5,63 +5,43 @@
 #define ARENA_MEM_SIZE 4096ll
 static byte memory[ARENA_MEM_SIZE];
 
-typedef struct Date Date;
-typedef struct Time Time;
-typedef struct Date_Time Date_Time;
+typedef struct Mem_Pool_Allocator Mem_Pool_Allocator;
+typedef struct Mem_Pool_Node Mem_Pool_Node;
 
-// struct Time_Duration {
-// 	i64 _nsec;
-// };
-
-struct Time_Point {
-	i64 seconds;
-	i32 nanoseconds;
+struct Mem_Pool_Node {
+	Mem_Pool_Node* next;
 };
 
-struct Time {
-    i8 hour;
-    i8 minute;
-    i8 second;
-    i32 nanosec;
+struct Mem_Pool_Allocator {
+	void* data;
+	isize capacity;
+	isize pool_size;
+	isize pool_align;
+	Mem_Pool_Node* free_list;
 };
 
-struct Date {
-    i32 year;
-    i8 month;
-    i8 day;
-};
+void pool_init(Mem_Pool_Allocator* a, byte* buffer, isize buflen, isize pool_size, isize alignment){
+	isize capacity = buflen;
+	uintptr original_start = (uintptr)buffer;
+	uintptr aligned_start = align_forward_ptr(original_start, alignment);
+	capacity -= (isize)(aligned_start - original_start);
 
-struct Date_Time {
-	Date date;
-	Time time;
-};
-
-Date_Time time_now(){
-	Date_Time dt = {0};
-	struct timespec spec_buf = {0};
-	struct tm time_buf = {0};
-
-	i32 res = clock_gettime(CLOCK_REALTIME, &spec_buf);
-	debug_assert(res >= 0, "Failed to get clock");
-
-	time_t now = time(null);
-	localtime_r(&now, &time_buf);
-
-	dt.date.year    = 1900 + time_buf.tm_year;
-	dt.date.month   = 1 + time_buf.tm_mon;
-	dt.date.day     = time_buf.tm_mday;
-	dt.time.hour    = time_buf.tm_hour;
-	dt.time.minute  = time_buf.tm_min;
-	dt.time.second  = time_buf.tm_sec;
-	dt.time.nanosec = spec_buf.tv_nsec;
-
-	return dt;
+	isize align_pool_size = align_forward_size(pool_size, alignment);
+	panic_assert((usize)pool_size >= sizeof(Mem_Pool_Node), "Pool size is too small");
+	panic_assert(capacity >= pool_size, "Buffer is too small to hold at least one pool");
 }
 
+// void* pool_alloc(Mem_Pool_Allocator* a);
+
+// void* pool_free(Mem_Pool_Allocator* a, void* ptr);
+
+// void* pool_free_all(Mem_Pool_Allocator* a, void* ptr);
+
 int main(){
-    Logger logger = log_create_console_logger();
-	Date_Time dt = time_now();
-	log_info(logger, "yo");
-	printf("%02d-%02d-%02d %02d:%02d:%02d %d\n", dt.date.year, dt.date.month,dt.date.day,dt.time.hour, dt.time.minute, dt.time.second, dt.time.nanosec);
+    Console_Logger* cl = log_create_console_logger((Mem_Allocator){0});
+	Logger logger = log_console_logger(cl, 0);
+
+
+	log_fatal(logger, "yo");
 }
 
