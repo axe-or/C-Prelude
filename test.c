@@ -1,5 +1,5 @@
+#define _XOPEN_SOURCE 500
 #include "prelude.h"
-
 #define ARENA_MEM_SIZE (4096ll * 4096ll)
 static byte ARENA_MEMORY[ARENA_MEM_SIZE];
 
@@ -36,17 +36,5 @@ void pool_init(Mem_Pool_Allocator* a, byte* buffer, isize buflen, isize pool_siz
 // void* pool_free_all(Mem_Pool_Allocator* a, void* ptr);
 
 int main(){
-	Mem_Arena arena;
-	arena_init(&arena, ARENA_MEMORY, ARENA_MEM_SIZE);
-	Mem_Allocator allocator = arena_allocator(&arena);
-
-    Console_Logger* cl = log_create_console_logger(allocator);
-	Logger logger = log_console_logger(cl, 0);
-
-	for(int i = 0; i < 20; i++){
-		time_sleep(250 * time_millisecond);
-		log_info(logger, "yes");
-	}
-
 }
 
