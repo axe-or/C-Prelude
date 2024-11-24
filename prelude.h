@@ -1,6 +1,8 @@
-// TODO: Pool Allocator
-// TODO: Heap Allocator
 // TODO: String builder
+// TODO: Basic Path handling
+// TODO: Heap Allocator
+// TODO: Pool Allocator
+// TODO: Library loading?
 
 #pragma once
 //// Essentials ////////////////////////////////////////////////////////////////
@@ -49,8 +51,9 @@ void swap_bytes_raw(byte* data, isize len){
 
 #define swap_bytes(Ptr) swap_bytes_raw((byte*)(Ptr), sizeof(*(Ptr)))
 
-#define min(A, B) ((A) < (B) ? (A) : (B))
-#define max(A, B) ((A) > (B) ? (A) : (B))
+#define abs(X) (((X) < 0ll) ? -(X) : (X))
+#define min(A, B) (((A) < (B)) ? (A) : (B))
+#define max(A, B) (((A) > (B)) ? (A) : (B))
 #define clamp(Lo, X, Hi) min(max(Lo, X), Hi)
 
 #define container_of(Ptr, Type, Member) \
@@ -93,7 +96,7 @@ void spinlock_release(Spinlock* l);
 typedef struct Bytes Bytes;
 typedef struct Mem_Allocator Mem_Allocator;
 
-#define mem_new(T_, N_, Al_) mem_alloc((Al_), sizeof(T_) * (N_), alignof(T_))
+#define mem_new(Type, Num, Alloc) mem_alloc((Alloc), sizeof(Type) * (Num), alignof(Type));
 
 // Helper to use with printf "%.*s"
 #define fmt_bytes(buf) (int)((buf).len), (buf).data
@@ -333,23 +336,6 @@ struct Source_Location {
 }
 
 //// String Builder ////////////////////////////////////////////////////////////
-typedef struct String_Builder String_Builder;
-
-struct String_Builder {
-	byte* data;
-	isize len;
-	isize cap;
-	Mem_Allocator allocator;
-};
-
-bool sb_init(String_Builder* sb, Mem_Allocator allocator, isize initial_cap);
-
-void sb_destroy(String_Builder* sb);
-
-void sb_delete_bytes(String_Builder *sb, isize idx, isize n);
-
-void sb_delete_runes(String_Builder *sb, isize idx, isize n);
-
 // bool sb_append_string(String_Builder *sb, String s);
 // bool sb_append_rune(String_Builder *sb, rune r);
 // bool sb_append_integer(String_Builder *sb, i64 n);
