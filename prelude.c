@@ -15,7 +15,7 @@ void debug_assert_ex(bool pred, cstring msg, Source_Location loc){
 		(void)pred; (void)msg;
 	#else
 	if(!pred){
-		fprintf(stderr, "Failed assert: %s\n", msg);
+		fprintf(stderr, "(%s:%d) Failed assert: %s\n", loc.filename, loc.line, msg);
 		abort();
 	}
 	#endif
@@ -125,6 +125,19 @@ void mem_free(Mem_Allocator allocator, void* p){
 
 void mem_free_all(Mem_Allocator allocator){
 	allocator.func(allocator.data, Mem_Op_Free_All, null, 0, 0, null);
+}
+
+void* mem_realloc(Mem_Allocator allocator, void* ptr, isize old_size, isize new_size, isize align){
+	if(mem_resize(allocator, ptr, new_size) != null){
+		return ptr; /* In-place resize successful */
+	}
+
+	void* new_data = mem_alloc(allocator, new_size, align);
+	if(new_data != null){
+		mem_copy_no_overlap(new_data, ptr, min(old_size, new_size));
+		mem_free_ex(allocator, ptr, old_size, align);
+	}
+	return new_data;
 }
 
 //// UTF-8 /////////////////////////////////////////////////////////////////////
@@ -637,6 +650,53 @@ void arena_destroy(Mem_Arena* a){
 	arena_free_all(a);
 	a->capacity = 0;
 	a->data = null;
+}
+
+//// String Builder ////////////////////////////////////////////////////////////
+
+bool sb_init(String_Builder* sb, Mem_Allocator allocator, isize initial_cap){
+	sb->allocator = allocator;
+	sb->len = 0;
+	sb->data = mem_new(byte, initial_cap, allocator);
+	sb->cap = initial_cap;
+	return sb->data != null;
+}
+
+void sb_destroy(String_Builder* sb){
+	mem_free_ex(sb->allocator, sb->data, sb->cap, alignof(byte));
+}
+
+isize sb_append_bytes(String_Builder* sb, byte const* buf, isize nbytes){
+	if((sb->len + nbytes) > sb->cap){
+		byte* new_data = mem_realloc(sb->allocator, sb->data, sb->cap, max(16, (sb->cap * 7) / 4), alignof(byte));
+		if(new_data == null){ return -1; }
+	}
+	mem_copy(&sb->data[sb->len], buf, nbytes);
+	sb->len += nbytes;
+	return nbytes;
+}
+
+String sb_build(String_Builder* sb){
+	mem_resize(sb->allocator, sb->data, sb->len);
+	String s = str_from_bytes(sb->data, sb->len);
+	sb->len = 0;
+	sb->cap = 0;
+	sb->data = null;
+	return s;
+}
+
+isize sb_append_str(String_Builder* sb, String s){
+	return sb_append_bytes(sb, s.data, s.len);
+}
+
+isize sb_append_rune(String_Builder* sb, rune r){
+	UTF8_Encode_Result enc = utf8_encode(r);
+	return sb_append_bytes(sb, enc.bytes, enc.len);
+}
+
+void sb_clear(String_Builder* sb){
+	mem_set(sb, 0, max(sb->len, 1));
+	sb->len = 0;
 }
 
 //// Time //////////////////////////////////////////////////////////////////////

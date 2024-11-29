@@ -1,4 +1,3 @@
-// TODO: String builder
 // TODO: Basic Path handling
 // TODO: Heap Allocator
 // TODO: Pool Allocator
@@ -51,7 +50,8 @@ void swap_bytes_raw(byte* data, isize len){
 
 #define swap_bytes(Ptr) swap_bytes_raw((byte*)(Ptr), sizeof(*(Ptr)))
 
-#define abs(X) (((X) < 0ll) ? -(X) : (X))
+// This is to avoid conflict with stdlib's "abs()"
+#define abs_val(X) (( (X) < 0ll) ? -(X) : (X))
 #define min(A, B) (((A) < (B)) ? (A) : (B))
 #define max(A, B) (((A) > (B)) ? (A) : (B))
 #define clamp(Lo, X, Hi) min(max(Lo, X), Hi)
@@ -172,6 +172,10 @@ void mem_free(Mem_Allocator allocator, void* p);
 
 // Free all pointers owned by allocator
 void mem_free_all(Mem_Allocator allocator);
+
+// Re-allocate to new_size, first tries to resize in-place, then uses
+// alloc->copy->free to attempt reallocation, returns null on failure
+void* mem_realloc(Mem_Allocator allocator, void* ptr, isize old_size, isize new_size, isize align);
 
 //// Arena Allocator ///////////////////////////////////////////////////////////
 typedef struct Mem_Arena Mem_Arena;
@@ -443,6 +447,38 @@ Logger log_console_logger(Console_Logger* cl, u32 options);
 
 // Log Helper (fatal)
 #define log_fatal(LoggerObj, Msg) log_ex((LoggerObj), (Msg), this_location(), Log_Fatal)
+
+//// String Builder ////////////////////////////////////////////////////////////
+typedef struct String_Builder String_Builder;
+
+struct String_Builder {
+	byte* data;
+	isize len;
+	isize cap;
+	Mem_Allocator allocator;
+};
+
+// Initialize a string builder, returns false on failure
+bool sb_init(String_Builder* sb, Mem_Allocator allocator, isize initial_cap);
+
+// Free current string builder buffer
+void sb_destroy(String_Builder* sb);
+
+// Append buffer of bytes to the end of builder. Returns < 0 if an error occours
+// and number of bytes added otherwhise
+isize sb_append_bytes(String_Builder* sb, byte const* buf, isize nbytes);
+
+// Build owned string, resetting internal variables of builder
+String sb_build(String_Builder* sb);
+
+// Append utf-8 string to builder
+isize sb_append_str(String_Builder* sb, String s);
+
+// Append encoded rune to string builder
+isize sb_append_rune(String_Builder* sb, rune r);
+
+// Reset builder's length, does not free  memory
+void sb_clear(String_Builder* sb);
 
 //// Time //////////////////////////////////////////////////////////////////////
 typedef struct Time_Point Time_Point;
