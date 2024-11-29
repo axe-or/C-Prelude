@@ -737,5 +737,40 @@ void time_sleep(Time_Duration d){
 }
 
 
-/// Pool Allocator /////////////////////////////////////////////////////////////
+//// Pool Allocator ////////////////////////////////////////////////////////////
+
+//// LibC Allocator ////////////////////////////////////////////////////////////
+static
+void* libc_allocator_func (
+	void * restrict impl,
+	enum Allocator_Op op,
+	void* old_ptr,
+	isize size, isize align,
+	i32* capabilities
+){
+	(void)impl;
+	switch(op){
+	case Mem_Op_Query:
+		*capabilities = Allocator_Align_Any | Allocator_Alloc_Any | Allocator_Free_Any;
+	break;
+	case Mem_Op_Alloc:
+		return aligned_alloc(align, size);
+	case Mem_Op_Resize:
+		return null;
+	case Mem_Op_Free:
+		free(old_ptr);
+	break;
+	case Mem_Op_Free_All:
+		return null;
+	}
+	return null;
+}
+
+Mem_Allocator libc_allocator(){
+	return (Mem_Allocator){
+		.func = libc_allocator_func,
+		.data = null,
+	};
+}
+
 

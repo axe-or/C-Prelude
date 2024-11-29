@@ -33,6 +33,7 @@
 //
 // // void* pool_free_all(Mem_Pool_Allocator* a, void* ptr);
 
+
 #define ARENA_MEM_SIZE (4096ll * 4096ll)
 static byte ARENA_MEMORY[ARENA_MEM_SIZE];
 #include <stdio.h>
@@ -40,7 +41,8 @@ static byte ARENA_MEMORY[ARENA_MEM_SIZE];
 int main(){
 	Mem_Arena arena = {0};
 	arena_init(&arena, ARENA_MEMORY, ARENA_MEM_SIZE);
-	Mem_Allocator allocator = arena_allocator(&arena);
+	// Mem_Allocator allocator = arena_allocator(&arena);
+	Mem_Allocator allocator = libc_allocator();
 
 	String_Builder builder = {0};
 	panic_assert(sb_init(&builder, allocator, 32), "Failed to init builder");

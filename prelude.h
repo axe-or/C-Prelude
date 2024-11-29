@@ -1,5 +1,4 @@
 // TODO: Basic Path handling
-// TODO: Heap Allocator
 // TODO: Pool Allocator
 // TODO: Library loading?
 
@@ -517,3 +516,9 @@ Time_Duration time_duration_diff(Time_Duration a, Time_Duration b);
 	Time_Point: time_point_diff)(A, B)
 
 //// Pool Allocator ////////////////////////////////////////////////////////////
+
+//// LibC Allocator ////////////////////////////////////////////////////////////
+
+// Wrapper around libc's malloc() and free()
+Mem_Allocator libc_allocator();
+
