@@ -1,4 +1,3 @@
-#define _XOPEN_SOURCE 500
 #include "prelude.h"
 
 // typedef struct Mem_Pool_Allocator Mem_Pool_Allocator;
@@ -38,6 +37,47 @@
 static byte ARENA_MEMORY[ARENA_MEM_SIZE];
 #include <stdio.h>
 
+//// Dynamic Loading ///////////////////////////////////////////////////////////
+// #if PRELUDE_DYN_LOAD
+// #else
+// #endif
+
+typedef struct Lib_Handle Lib_Handle;
+#include <dlfcn.h>
+
+struct Lib_Handle {
+	uintptr _data;
+};
+
+static inline
+bool lib_ok(Lib_Handle h){
+	return h._data != 0;
+}
+
+#define MAX_LIB_SYMBOL_SIZE 4096
+
+Lib_Handle lib_open(String path){
+	char pathbuf[MAX_LIB_SYMBOL_SIZE] = {0};
+	mem_copy_no_overlap(pathbuf, path.data, min(MAX_LIB_SYMBOL_SIZE - 1, path.len));
+	void* res = dlopen(pathbuf, RTLD_LOCAL | RTLD_LAZY);
+	return (Lib_Handle){
+		._data = (uintptr)res,
+	};
+}
+
+void lib_close(Lib_Handle h){
+	if(h._data == 0){ return; }
+	dlclose((void*)h._data);
+}
+
+void* lib_load_symbol(Lib_Handle h, String sym){
+	char namebuf[MAX_LIB_SYMBOL_SIZE] = {0};
+	mem_copy_no_overlap(namebuf, sym.data, min(MAX_LIB_SYMBOL_SIZE - 1, sym.len));
+
+	void* res = dlsym((void*)h._data, namebuf);
+	return res;
+}
+
 int main(){
 	Mem_Arena arena = {0};
 	arena_init(&arena, ARENA_MEMORY, ARENA_MEM_SIZE);
@@ -49,4 +89,5 @@ int main(){
 	String s = sb_build(&builder);
 	printf(">> '%.*s'", fmt_bytes(s));
 }
+
 

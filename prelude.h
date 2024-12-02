@@ -1,6 +1,5 @@
-// TODO: Basic Path handling
-// TODO: Pool Allocator
 // TODO: Library loading?
+// TODO: Pool Allocator
 
 #pragma once
 //// Essentials ////////////////////////////////////////////////////////////////
@@ -338,13 +337,6 @@ struct Source_Location {
     .line = __LINE__, \
 }
 
-//// String Builder ////////////////////////////////////////////////////////////
-// bool sb_append_string(String_Builder *sb, String s);
-// bool sb_append_rune(String_Builder *sb, rune r);
-// bool sb_append_integer(String_Builder *sb, i64 n);
-// bool sb_append_real(String_Builder *sb, f64 n);
-
-
 //// Assert ////////////////////////////////////////////////////////////////////
 // Crash if `pred` is false, this is disabled in non-debug builds
 void debug_assert_ex(bool pred, cstring msg, Source_Location loc);
@@ -476,7 +468,7 @@ isize sb_append_str(String_Builder* sb, String s);
 // Append encoded rune to string builder
 isize sb_append_rune(String_Builder* sb, rune r);
 
-// Reset builder's length, does not free  memory
+// Reset builder's buffer and length, does not free memory
 void sb_clear(String_Builder* sb);
 
 //// Time //////////////////////////////////////////////////////////////////////
@@ -517,8 +509,8 @@ Time_Duration time_duration_diff(Time_Duration a, Time_Duration b);
 
 //// Pool Allocator ////////////////////////////////////////////////////////////
 
-//// LibC Allocator ////////////////////////////////////////////////////////////
 
-// Wrapper around libc's malloc() and free()
+//// LibC Allocator ////////////////////////////////////////////////////////////
+// Wrapper around libc's aligned_alloc() and free()
 Mem_Allocator libc_allocator();
 
