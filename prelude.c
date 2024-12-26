@@ -1,9 +1,11 @@
 #include "prelude.h"
+
+#ifndef TARGET_OS_FREESTANDING
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdlib.h>
 #include <time.h>
+#endif
 
 //// Assert ////////////////////////////////////////////////////////////////////
 void debug_assert_ex(bool pred, cstring msg, Source_Location loc){
@@ -530,10 +532,9 @@ i32 log_ex_cstr(Logger l, cstring message, Source_Location loc, u8 level_n){
     return log_ex_str(l, str_from(message), loc, level_n);
 }
 
-static i32 _console_logger_func(void* impl, String message, u32 options, u8 level_n, Source_Location location){
+static i32 _console_logger_func(void* impl, String message, u32 options, u8 level_num, Source_Location location){
     (void)impl;
-    enum Log_Level level = level;
-    cstring header = log_level_map[level_n];
+    cstring header = log_level_map[level_num];
     i32 n = printf("[%-5s %s:%d %s] %.*s\n", header, location.filename, location.line, location.caller_name, fmt_bytes(message));
     return n;
 }

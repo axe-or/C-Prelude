@@ -13,12 +13,21 @@
 //// Essentials ////////////////////////////////////////////////////////////////
 #include <stddef.h>
 #include <stdint.h>
-#include <stdalign.h>
 #include <stdbool.h>
+#include <stdarg.h>
+#include <stdalign.h>
 #include <stdnoreturn.h>
-#include <stdatomic.h>
-#include <limits.h>
 
+#ifndef TARGET_OS_FREESTANDING
+	#ifndef TARGET_DISABLE_ATOMICS
+	#include <stdatomic.h>
+	#endif
+#include <tgmath.h>
+#include <limits.h>
+#include <float.h>
+#endif
+
+//// Essentials ////////////////////////////////////////////////////////////////
 #define null NULL
 
 typedef int8_t  i8;
@@ -58,8 +67,8 @@ void swap_bytes_raw(byte* data, isize len){
 
 // This is to avoid conflict with stdlib's "abs()"
 #define abs_val(X) (( (X) < 0ll) ? -(X) : (X))
-#define min(A, B) (((A) < (B)) ? (A) : (B))
-#define max(A, B) (((A) > (B)) ? (A) : (B))
+#define min(A, B)  (((A) < (B)) ? (A) : (B))
+#define max(A, B)  (((A) > (B)) ? (A) : (B))
 #define clamp(Lo, X, Hi) min(max(Lo, X), Hi)
 
 #define container_of(Ptr, Type, Member) \
@@ -73,9 +82,12 @@ typedef _Bool bool;
 
 static_assert(sizeof(f32) == 4 && sizeof(f64) == 8, "Bad float size");
 static_assert(sizeof(isize) == sizeof(usize), "Mismatched (i/u)size");
+static_assert(sizeof(void(*)(void)) == sizeof(void*), "Function pointers and data pointers must be of the same width");
+static_assert(sizeof(void(*)(void)) == sizeof(uintptr), "Mismatched pointer types");
 static_assert(CHAR_BIT == 8, "Invalid char size");
 
 //// Spinlock //////////////////////////////////////////////////////////////////
+#ifndef TARGET_DISABLE_ATOMICS
 #define SPINLOCK_LOCKED 1
 #define SPINLOCK_UNLOCKED 0
 
@@ -97,6 +109,8 @@ void spinlock_release(Spinlock* l);
 
 #define spinlock_guard(LockPtr, Scope) \
 	do { spinlock_acquire(LockPtr); do { Scope } while(0); spinlock_release(LockPtr); } while(0)
+
+#endif
 
 //// Memory ////////////////////////////////////////////////////////////////////
 typedef struct Mem_Allocator Mem_Allocator;
@@ -439,7 +453,6 @@ noreturn void unimplemented();
 
 //// Logger ////////////////////////////////////////////////////////////////////
 typedef struct Logger Logger;
-typedef struct Console_Logger Console_Logger;
 
 typedef i32 (*Logger_Func)(
     void* impl,
@@ -479,11 +492,6 @@ struct Logger {
 	u32 options;
 };
 
-struct Console_Logger {
-	// TODO: allow std/stderr distinctino
-	Mem_Allocator parent_allocator;
-};
-
 // Log(explicit) using string
 i32 log_ex_str(Logger l, String message, Source_Location loc, u8 level_n);
 
@@ -496,15 +504,6 @@ i32 log_ex_cstr(Logger l, cstring message, Source_Location loc, u8 level_n);
     cstring: log_ex_cstr, \
     char* : log_ex_cstr, \
     String: log_ex_str)(LoggerObj, Msg, Loc, Level)
-
-// Create a logger that prints to stdout
-Console_Logger* log_create_console_logger(Mem_Allocator allocator);
-
-// Destroy console logger
-void log_destroy_console_logger(Console_Logger* cl);
-
-// Get the Logger interface from a console logger
-Logger log_console_logger(Console_Logger* cl, u32 options);
 
 // Log Helper (info)
 #define log_info(LoggerObj, Msg) log_ex((LoggerObj), (Msg), this_location(), Log_Info)
@@ -520,6 +519,25 @@ Logger log_console_logger(Console_Logger* cl, u32 options);
 
 // Log Helper (fatal)
 #define log_fatal(LoggerObj, Msg) log_ex((LoggerObj), (Msg), this_location(), Log_Fatal)
+
+//// Console Logger ////////////////////////////////////////////////////////////
+#ifndef TARGET_OS_FREESTANDING
+typedef struct Console_Logger Console_Logger;
+
+struct Console_Logger {
+	// TODO: allow std/stderr distinctino
+	Mem_Allocator parent_allocator;
+};
+
+// Create a logger that prints to stdout
+Console_Logger* log_create_console_logger(Mem_Allocator allocator);
+
+// Destroy console logger
+void log_destroy_console_logger(Console_Logger* cl);
+
+// Get the Logger interface from a console logger
+Logger log_console_logger(Console_Logger* cl, u32 options);
+#endif
 
 //// String Builder ////////////////////////////////////////////////////////////
 typedef struct String_Builder String_Builder;
@@ -557,6 +575,7 @@ void sb_clear(String_Builder* sb);
 typedef struct Time_Point Time_Point;
 
 // Difference between 2 time points (in nanoseconds)
+// Note that a 64bit signed integer can handle around +-292 years.
 typedef i64 Time_Duration;
 
 // UNIX Epoch scaled to nanosecond precision
@@ -575,6 +594,8 @@ Time_Duration time_since(Time_Point p);
 
 // Time difference
 Time_Duration time_point_diff(Time_Point a, Time_Point b);
+
+// Time difference
 Time_Duration time_duration_diff(Time_Duration a, Time_Duration b);
 
 // Time constants, as a multiple of durations
@@ -590,6 +611,8 @@ Time_Duration time_duration_diff(Time_Duration a, Time_Duration b);
 	Time_Point: time_point_diff)(A, B)
 
 //// LibC Allocator ////////////////////////////////////////////////////////////
+#ifndef TARGET_OS_FREESTANDING
 // Wrapper around libc's aligned_alloc() and free()
 Mem_Allocator libc_allocator();
 
+#endif
