@@ -11,7 +11,7 @@
 
 //// Assert ////////////////////////////////////////////////////////////////////
 void debug_assert_ex(bool pred, cstring msg, Source_Location loc){
-	#ifdef NDEBUG
+	#if defined(NDEBUG) || defined(RELEASE_MODE)
 		(void)pred; (void)msg;
 	#else
 	if(!pred){

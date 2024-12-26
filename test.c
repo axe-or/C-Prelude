@@ -43,14 +43,21 @@ void* pool_alloc(Mem_Pool* pool);
 Mem_Allocator pool_allocator(Mem_Pool* pool);
 
 bool pool_init(Mem_Pool* pool, byte* data, isize len, isize node_size, isize node_alignment){
+	mem_set(pool, 0, sizeof(*pool)); // Ensure clean state for pool
 	uintptr unaligned_start = (uintptr)data;
 	uintptr start = align_forward_ptr(unaligned_start, node_alignment);
 	len -= (isize)(start - unaligned_start);
 
 	node_size = align_forward_size(node_size, node_alignment);
 
-	debug_assert(node_size >= (isize)sizeof(Mem_Pool_Node*), "Size of node is too small");
-	debug_assert(len >= node_size, "Buffer length is too small");
+	bool size_ok = node_size >= (isize)(sizeof(Mem_Pool_Node*));
+	bool length_ok = len >= node_size;
+
+	debug_assert(size_ok, "Size of node is too small");
+	debug_assert(length_ok, "Buffer length is too small");
+	if(!size_ok || !length_ok){
+		return false;
+	}
 
 	pool->data = (byte*)start; // or data?
 	pool->capacity = len;
@@ -147,8 +154,17 @@ Mem_Allocator pool_allocator(Mem_Pool* pool){
 	};
 }
 
+#define MEM_SIZE (400ll)
 int main(){
-	printf("Platform: %s\n", TARGET_OS_NAME);
+	static byte memory[MEM_SIZE];
+
+	Mem_Pool p;
+	if(!pool_init(&p, memory, MEM_SIZE, 4, 4)){
+		printf("zamn..");
+	}
+
+	printf("%p", pool_alloc(&p));
+
 }
 
 

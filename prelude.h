@@ -341,7 +341,11 @@ struct Source_Location {
 // Crash if `pred` is false, this is disabled in non-debug builds
 void debug_assert_ex(bool pred, cstring msg, Source_Location loc);
 
+#if defined(NDEBUG) || defined(RELEASE_MODE)
+#define debug_assert(Pred, Msg) ((void)0)
+#else
 #define debug_assert(Pred, Msg) debug_assert_ex(Pred, Msg, this_location())
+#endif
 
 // Crash if `pred` is false, this is always enabled
 void panic_assert_ex(bool pred, cstring msg, Source_Location loc);
