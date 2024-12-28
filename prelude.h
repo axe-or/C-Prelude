@@ -157,6 +157,10 @@ void mem_set(void* p, byte val, isize nbytes);
 // Copy n bytes for source to destination, they may overlap.
 void mem_copy(void* dest, void const * src, isize nbytes);
 
+// Compare 2 buffers of memory, returns -1, 0, 1 depending on which buffer shows
+// a bigger byte first, 0 meaning equality.
+i32 mem_compare(void const * a, void const * b, isize nbytes);
+
 // Copy n bytes for source to destination, they should not overlap, this tends
 // to be faster then mem_copy
 void mem_copy_no_overlap(void* dest, void const * src, isize nbytes);
@@ -314,7 +318,7 @@ struct UTF8_Decode_Result {
 };
 
 // The error rune
-static const rune UTF8_ERROR = 0xfffd;
+#define UTF8_ERROR ((rune)(0xfffd))
 
 // The error rune, byte encoded
 static const UTF8_Encode_Result UTF8_ERROR_ENCODED = {
@@ -346,7 +350,7 @@ bool utf8_iter_prev(UTF8_Iterator* iter, rune* r, i8* len);
 //// Strings ///////////////////////////////////////////////////////////////////
 typedef struct String String;
 
-#define str_lit(CstrLit) (String){ .data = (byte const*)(CstrLit), .len = sizeof(CstrLit) }
+#define str_lit(CstrLit) (String){ .data = (byte const*)(CstrLit), .len = (sizeof(CstrLit) - 1) }
 
 struct String {
 	byte const * data;
@@ -401,6 +405,12 @@ String str_trim_trailing(String s, String cutset);
 
 // Trim leading and trailing codepoints
 String str_trim(String s, String cutset);
+
+// Check if string starts with a prefix
+bool str_starts_with(String s, String prefix);
+
+// Check if string ends with a suffix
+bool str_ends_with(String s, String suffix);
 
 // Get an utf8 iterator from string
 UTF8_Iterator str_iterator(String s);

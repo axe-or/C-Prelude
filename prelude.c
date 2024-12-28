@@ -1,11 +1,8 @@
 #include "prelude.h"
 
-#ifndef TARGET_OS_FREESTANDING
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
-#endif
 
 //// Assert ////////////////////////////////////////////////////////////////////
 void debug_assert_ex(bool pred, cstring msg, Source_Location loc){
@@ -73,6 +70,10 @@ void mem_copy(void* dest, void const * src, isize nbytes){
 
 void mem_copy_no_overlap(void* dest, void const * src, isize nbytes){
 	__builtin_memcpy(dest, src, nbytes);
+}
+
+i32 mem_compare(void const * a, void const * b, isize nbytes){
+	return __builtin_memcmp(a, b, nbytes);
 }
 
 uintptr align_forward_ptr(uintptr p, uintptr a){
@@ -357,6 +358,23 @@ isize str_codepoint_count(String s){
 	return count;
 }
 
+bool str_starts_with(String s, String prefix){
+	if(prefix.len > s.len){ return false; }
+
+	s = str_sub(s, 0, prefix.len);
+
+	i32 res = mem_compare(prefix.data, s.data, prefix.len);
+	return res == 0;
+}
+
+bool str_ends_with(String s, String suffix){
+	if(suffix.len > s.len){ return false; }
+
+	s = str_sub(s, s.len - suffix.len, suffix.len);
+
+	i32 res = mem_compare(suffix.data, s.data, suffix.len);
+	return res == 0;
+}
 
 isize str_codepoint_offset(String s, isize n){
 	UTF8_Iterator it = str_iterator(s);
@@ -713,6 +731,8 @@ void sb_clear(String_Builder* sb){
 }
 
 //// Time //////////////////////////////////////////////////////////////////////
+#if defined(TARGET_OS_LINUX)
+#include <time.h>
 Time_Point time_now(){
 	struct timespec spec = {0};
 	Time_Point p = {0};
@@ -748,6 +768,7 @@ void time_sleep(Time_Duration d){
 		if(ok && (errno != EINTR)) break;
 	}
 }
+#endif
 
 //// LibC Allocator ////////////////////////////////////////////////////////////
 static
