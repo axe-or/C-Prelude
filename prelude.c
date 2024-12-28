@@ -1,7 +1,3 @@
-#ifndef _XOPEN_SOURCE
-#define _XO_XOPEN_SOURCE 600
-#endif
-
 #include "prelude.h"
 #include <errno.h>
 #include <stdio.h>
@@ -138,6 +134,19 @@ void* mem_realloc(Mem_Allocator allocator, void* ptr, isize old_size, isize new_
 		mem_free_ex(allocator, ptr, old_size, align);
 	}
 	return new_data;
+}
+
+//// IO Interface //////////////////////////////////////////////////////////////
+i64 io_write(IO_Stream s, byte* buf, isize buflen){
+	return s.func(s.data, IO_Write, buf, buflen);
+}
+
+i64 io_read(IO_Stream s, byte* buf, isize buflen){
+	return s.func(s.data, IO_Read, buf, buflen);
+}
+
+u8 io_capabilities(IO_Stream s){
+	return (u8)s.func(s.data, IO_Query, null, 0);
 }
 
 //// UTF-8 /////////////////////////////////////////////////////////////////////
@@ -349,7 +358,7 @@ isize str_codepoint_count(String s){
 
 isize str_codepoint_offset(String s, isize n){
 	UTF8_Iterator it = str_iterator(s);
-	
+
 	isize acc = 0;
 
 	rune c; i8 len;
@@ -582,7 +591,7 @@ void arena_free_all(Mem_Arena* a){
 static
 void* arena_allocator_func(
 	void* impl,
-	enum Allocator_Op op,
+	byte op,
 	void* old_ptr,
 	isize size,
 	isize align,
@@ -590,8 +599,9 @@ void* arena_allocator_func(
 {
 	Mem_Arena* a = impl;
 	(void)old_ptr;
+	enum Allocator_Op operation = op;
 
-	switch(op){
+	switch(operation){
 		case Mem_Op_Alloc: {
 			return arena_alloc(a, size, align);
 		} break;
@@ -609,6 +619,8 @@ void* arena_allocator_func(
 		case Mem_Op_Query: {
 			*capabilities = Allocator_Alloc_Any | Allocator_Free_All | Allocator_Align_Any | Allocator_Resize;
 		} break;
+
+		default: panic("Bad enum access");
 	}
 
 	return null;
@@ -620,7 +632,7 @@ void* arena_resize(Mem_Arena* a, void* ptr, isize new_size){
 		uintptr current = base + (uintptr)a->offset;
 		uintptr limit = base + (uintptr)a->capacity;
 		isize last_allocation_size = current - a->last_allocation;
-		
+
 		if((current - last_allocation_size + new_size) > limit){
 			return null; /* No space left*/
 		}
@@ -727,8 +739,8 @@ Time_Duration time_since(Time_Point p){
 
 void time_sleep(Time_Duration d){
 	struct timespec spec = {0};
-	spec.tv_sec = d / time_second;
-	spec.tv_nsec = d % time_second;
+	spec.tv_sec  = d / time_second;
+	spec.tv_nsec = d - (spec.tv_sec * time_second);
 
 	while(1){
 		bool ok = nanosleep(&spec, &spec) >= 0;
@@ -740,7 +752,7 @@ void time_sleep(Time_Duration d){
 static
 void* libc_allocator_func (
 	void * restrict impl,
-	enum Allocator_Op op,
+	byte op,
 	void* old_ptr,
 	isize size, isize align,
 	i32* capabilities
@@ -759,6 +771,7 @@ void* libc_allocator_func (
 	break;
 	case Mem_Op_Free_All:
 		return null;
+	default: panic("Bad enum access");
 	}
 	return null;
 }
@@ -771,4 +784,119 @@ Mem_Allocator libc_allocator(){
 }
 
 //// Pool Allocator ////////////////////////////////////////////////////////////
+bool pool_init(Mem_Pool* pool, byte* data, isize len, isize node_size, isize node_alignment){
+	mem_set(pool, 0, sizeof(*pool)); // Ensure clean state for pool
+	uintptr unaligned_start = (uintptr)data;
+	uintptr start = align_forward_ptr(unaligned_start, node_alignment);
+	len -= (isize)(start - unaligned_start);
+
+	node_size = align_forward_size(node_size, node_alignment);
+
+	bool size_ok = node_size >= (isize)(sizeof(Mem_Pool_Node*));
+	bool length_ok = len >= node_size;
+
+	debug_assert(size_ok, "Size of node is too small");
+	debug_assert(length_ok, "Buffer length is too small");
+	if(!size_ok || !length_ok){
+		return false;
+	}
+
+	pool->data = (byte*)start; // or data?
+	pool->capacity = len;
+	pool->node_size = node_size;
+	pool->free_list = null;
+	pool_free_all(pool);
+
+	return true;
+}
+
+void pool_free_all(Mem_Pool* pool){
+	isize node_count = pool->capacity / pool->node_size;
+
+	for(isize i = 0; i < node_count; i += 1){
+		void* p = &pool->data[i * node_count];
+		Mem_Pool_Node* node = (Mem_Pool_Node*)p;
+		node->next = pool->free_list;
+		pool->free_list = node;
+	}
+}
+
+void* pool_alloc(Mem_Pool* pool){
+	Mem_Pool_Node* node = pool->free_list;
+
+	if(node == null){
+		return null;
+	}
+
+	pool->free_list = pool->free_list->next;
+	mem_set(node, 0, pool->node_size);
+	return (void*)node;
+}
+
+static bool pool_owns_pointer(Mem_Pool* pool, void* ptr){
+	uintptr begin = (uintptr)pool->data;
+	uintptr end = (uintptr)(&pool->data[pool->capacity]);
+	uintptr p = (uintptr)ptr;
+	return p >= begin && p < end;
+}
+
+void pool_free(Mem_Pool* pool, void* ptr){
+	if(ptr == null){ return; }
+
+	debug_assert(pool_owns_pointer(pool, ptr), "Pointer is not owned by allocator");
+
+	Mem_Pool_Node* node = (Mem_Pool_Node*)ptr;
+	node->next = pool->free_list;
+	pool->free_list = node;
+}
+
+static
+void* pool_allocator_func (
+	void * restrict impl,
+	byte op,
+	void* old_ptr,
+	isize size, isize align,
+	i32* capabilities
+){
+	Mem_Pool* p = (Mem_Pool*) impl;
+	(void)align; // Pool has fixed alignment
+	enum Allocator_Op operation = op;
+
+	switch (operation) {
+		case Mem_Op_Query:{
+			*capabilities = Allocator_Free_All | Allocator_Free_Any | Allocator_Resize;
+		} break;
+
+		case Mem_Op_Alloc:
+			return pool_alloc(p);
+
+		case Mem_Op_Resize: {
+			debug_assert(pool_owns_pointer(p, old_ptr), "Pointer is not owned by allocator");
+			if(size <= p->node_size){
+				return old_ptr;
+			} else {
+				return null;
+			}
+		} break;
+
+		case Mem_Op_Free: {
+			debug_assert(pool_owns_pointer(p, old_ptr), "Pointer is not owned by allocator");
+			pool_free(p, old_ptr);
+		} break;
+
+		case Mem_Op_Free_All: {
+			pool_free_all(p);
+		} break;
+
+		default: panic("Bad enum access");
+	}
+	return null;
+}
+
+Mem_Allocator pool_allocator(Mem_Pool* pool){
+	return (Mem_Allocator){
+		.data = pool,
+		.func = pool_allocator_func,
+	};
+}
 

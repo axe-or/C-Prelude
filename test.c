@@ -1,170 +1,75 @@
 #include "prelude.h"
 #include <stdio.h>
 
-#define TARGET_OS_LINUX 1
+#define MEM_SIZE (400ll)
 
-//// Platform //////////////////////////////////////////////////////////////////
-#if defined(TARGET_OS_WINDOWS)
-#define TARGET_OS_NAME "Windows"
-#elif defined(TARGET_OS_LINUX)
-#define TARGET_OS_NAME "Linux"
-#else
-#error "Platform macro is not defined, this means you probably forgot to define it or this platform is not suported."
-#endif
+typedef struct IO_String_Reader IO_String_Reader;
 
-typedef struct Mem_Pool Mem_Pool;
-typedef struct Mem_Pool_Node Mem_Pool_Node;
-
-struct Mem_Pool {
-	byte* data;
-	isize capacity;
-	isize node_size;
-	Mem_Pool_Node* free_list;
+struct IO_String_Reader {
+	String source;
+	isize  current;
 };
-
-struct Mem_Pool_Node {
-	Mem_Pool_Node* next;
-};
-
-// Initialize pool allocator with nodes of a particular size and alignment.
-// Returns success status
-bool pool_init(Mem_Pool* pool, byte* data, isize len, isize node_size, isize node_alignment);
-
-// Mark all the pool's allocations as freed
-void pool_free_all(Mem_Pool* pool);
-
-// Mark specified pointer returned by `pool_alloc` as free again
-void pool_free(Mem_Pool* pool, void* ptr);
-
-// Allocate one node from pool, returns null on failure
-void* pool_alloc(Mem_Pool* pool);
-
-// Get pool as a conforming instance to the allocator interface
-Mem_Allocator pool_allocator(Mem_Pool* pool);
-
-bool pool_init(Mem_Pool* pool, byte* data, isize len, isize node_size, isize node_alignment){
-	mem_set(pool, 0, sizeof(*pool)); // Ensure clean state for pool
-	uintptr unaligned_start = (uintptr)data;
-	uintptr start = align_forward_ptr(unaligned_start, node_alignment);
-	len -= (isize)(start - unaligned_start);
-
-	node_size = align_forward_size(node_size, node_alignment);
-
-	bool size_ok = node_size >= (isize)(sizeof(Mem_Pool_Node*));
-	bool length_ok = len >= node_size;
-
-	debug_assert(size_ok, "Size of node is too small");
-	debug_assert(length_ok, "Buffer length is too small");
-	if(!size_ok || !length_ok){
-		return false;
-	}
-
-	pool->data = (byte*)start; // or data?
-	pool->capacity = len;
-	pool->node_size = node_size;
-	pool->free_list = null;
-	pool_free_all(pool);
-
-	return true;
-}
-
-void pool_free_all(Mem_Pool* pool){
-	isize node_count = pool->capacity / pool->node_size;
-
-	for(isize i = 0; i < node_count; i += 1){
-		void* p = &pool->data[i * node_count];
-		Mem_Pool_Node* node = (Mem_Pool_Node*)p;
-		node->next = pool->free_list;
-		pool->free_list = node;
-	}
-}
-
-void* pool_alloc(Mem_Pool* pool){
-	Mem_Pool_Node* node = pool->free_list;
-
-	if(node == null){
-		return null;
-	}
-
-	pool->free_list = pool->free_list->next;
-	mem_set(node, 0, pool->node_size);
-	return (void*)node;
-}
-
-static bool pool_owns_pointer(Mem_Pool* pool, void* ptr){
-	uintptr begin = (uintptr)pool->data;
-	uintptr end = (uintptr)(&pool->data[pool->capacity]);
-	uintptr p = (uintptr)ptr;
-	return p >= begin && p < end;
-}
-
-void pool_free(Mem_Pool* pool, void* ptr){
-	if(ptr == null){ return; }
-
-	debug_assert(pool_owns_pointer(pool, ptr), "Pointer is not owned by allocator");
-
-	Mem_Pool_Node* node = (Mem_Pool_Node*)ptr;
-	node->next = pool->free_list;
-	pool->free_list = node;
-}
 
 static
-void* pool_allocator_func (
-	void * restrict impl,
-	enum Allocator_Op op,
-	void* old_ptr,
-	isize size, isize align,
-	i32* capabilities
-){
-	Mem_Pool* p = (Mem_Pool*) impl;
-	(void)align; // Pool has fixed alignment
+i64 io_string_func(void* impl, byte op, byte* buf, isize buflen){
+	if(buflen <= 0){ return 0; }
 
-	switch (op) {
-		case Mem_Op_Query:{
-			*capabilities = Allocator_Free_All | Allocator_Free_Any | Allocator_Resize;
+	struct IO_String_Reader* reader = impl;
+	enum IO_Op operation = op;
+
+	switch(operation){
+		case IO_Query: {
+			return IO_Stream_Read;
 		} break;
 
-		case Mem_Op_Alloc:
-			return pool_alloc(p);
-
-		case Mem_Op_Resize: {
-			debug_assert(pool_owns_pointer(p, old_ptr), "Pointer is not owned by allocator");
-			if(size <= p->node_size){
-				return old_ptr;
-			} else {
-				return null;
+		case IO_Read: {
+			isize remaining = reader->source.len - reader->current;
+			if(remaining <= 0){
+				return IO_Err_End_Of_Stream;
+			}
+			UTF8_Decode_Result res = utf8_decode(&reader->source.data[reader->current], remaining);
+			if(res.codepoint != UTF8_ERROR){
+				isize to_copy = min(buflen, res.len);
+				mem_copy(buf, &reader->source.data[reader->current], res.len);
+				reader->current += res.len;
+				return to_copy;
+			}
+			else {
+				UTF8_Encode_Result error = UTF8_ERROR_ENCODED;
+				isize to_copy = min(buflen, error.len);
+				mem_copy(buf, error.bytes, to_copy);
+				return to_copy;
 			}
 		} break;
 
-		case Mem_Op_Free: {
-			pool_free(p, old_ptr);
-		} break;
+		case IO_Write: {
+			return IO_Err_Unsupported;
+		};
 
-		case Mem_Op_Free_All: {
-			pool_free_all(p);
-		} break;
+		default: panic("Bad enum access");
 	}
-	return null;
+
+	return IO_Err_Unsupported;
 }
 
-Mem_Allocator pool_allocator(Mem_Pool* pool){
-	return (Mem_Allocator){
-		.data = pool,
-		.func = pool_allocator_func,
+IO_String_Reader io_string_reader_make(String s);
+
+IO_String_Reader io_string_reader_make(String s){
+	return (IO_String_Reader){
+		.source = s,
+		.current = 0,
 	};
 }
 
-#define MEM_SIZE (400ll)
-int main(){
-	static byte memory[MEM_SIZE];
-
-	Mem_Pool p;
-	if(!pool_init(&p, memory, MEM_SIZE, 4, 4)){
-		printf("zamn..");
-	}
-
-	printf("%p", pool_alloc(&p));
-
+IO_Stream io_string_reader_stream(IO_String_Reader* r){
+	return (IO_Stream){
+		.data = r,
+		.func = io_string_func,
+	};
 }
 
+int main(){
+	static byte memory[MEM_SIZE];
+	printf("zamn..");
+}
 

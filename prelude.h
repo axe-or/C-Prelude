@@ -1,7 +1,15 @@
-// TODO: Pool Allocator
-// TODO: Library loading.
-
 #pragma once
+//// Platform //////////////////////////////////////////////////////////////////
+#if defined(TARGET_OS_WINDOWS)
+	#define TARGET_OS_NAME "Windows"
+	#define WIN32_LEAN_AND_MEAN
+#elif defined(TARGET_OS_LINUX)
+	#define TARGET_OS_NAME "Linux"
+	#define _XOPEN_SOURCE 800
+#else
+	#error "Platform macro `TARGET_OS_*` is not defined, this means you probably forgot to define it or this platform is not suported."
+#endif
+
 //// Essentials ////////////////////////////////////////////////////////////////
 #include <stddef.h>
 #include <stdint.h>
@@ -91,18 +99,12 @@ void spinlock_release(Spinlock* l);
 	do { spinlock_acquire(LockPtr); do { Scope } while(0); spinlock_release(LockPtr); } while(0)
 
 //// Memory ////////////////////////////////////////////////////////////////////
-typedef struct Bytes Bytes;
 typedef struct Mem_Allocator Mem_Allocator;
 
 #define mem_new(Type, Num, Alloc) mem_alloc((Alloc), sizeof(Type) * (Num), alignof(Type));
 
 // Helper to use with printf "%.*s"
 #define fmt_bytes(buf) (int)((buf).len), (buf).data
-
-struct Bytes {
-	byte* data;
-	isize len;
-};
 
 enum Allocator_Op {
 	Mem_Op_Query    = 0, // Query allocator's capabilities
@@ -123,7 +125,7 @@ enum Allocator_Capability {
 // Memory allocator method
 typedef void* (*Mem_Allocator_Func) (
 	void * restrict impl,
-	enum Allocator_Op op,
+	byte op,
 	void* old_ptr,
 	isize size, isize align,
 	i32* capabilities
@@ -175,6 +177,51 @@ void mem_free_all(Mem_Allocator allocator);
 // alloc->copy->free to attempt reallocation, returns null on failure
 void* mem_realloc(Mem_Allocator allocator, void* ptr, isize old_size, isize new_size, isize align);
 
+//// IO Interface //////////////////////////////////////////////////////////////
+typedef struct IO_Stream IO_Stream;
+
+enum IO_Op {
+	IO_Query = 0,
+	IO_Read  = 1,
+	IO_Write = 2,
+};
+
+enum IO_Error {
+	IO_Err_None          = 0,
+	IO_Err_End_Of_Stream = -1,
+	IO_Err_Unsupported   = -2,
+	IO_Err_Memory_Error  = -3,
+	IO_Err_Broken_Handle = -4,
+};
+
+enum IO_Capability {
+	IO_Stream_Read  = 1 << 0,
+	IO_Stream_Write = 1 << 1,
+};
+
+// Function that represents a read or write operation. Returns number of bytes
+// read into buf, returns a negative number indicating error if any.
+typedef i64 (*IO_Func)(
+	void* impl,
+	byte op,
+	byte* buf,
+	isize buflen);
+
+// Stream interface for IO operations.
+struct IO_Stream {
+	void*   data;
+	IO_Func func;
+};
+
+// Read from stream into buf. Returns number of bytes read or (if negative) an error code.
+i64 io_read(IO_Stream s, byte* buf, isize buflen);
+
+// Write buf into stream. Returns number of bytes written or (if negative) an error code.
+i64 io_write(IO_Stream s, byte* buf, isize buflen);
+
+// Get stream object's capabilities
+u8 io_capabilities(IO_Stream s);
+
 //// Arena Allocator ///////////////////////////////////////////////////////////
 typedef struct Mem_Arena Mem_Arena;
 
@@ -202,6 +249,37 @@ void *arena_alloc(Mem_Arena* a, isize size, isize align);
 
 // Get arena as a conforming instance to the allocator interface
 Mem_Allocator arena_allocator(Mem_Arena* a);
+
+//// Pool Allocator ////////////////////////////////////////////////////////////
+typedef struct Mem_Pool Mem_Pool;
+typedef struct Mem_Pool_Node Mem_Pool_Node;
+
+struct Mem_Pool {
+	byte* data;
+	isize capacity;
+	isize node_size;
+	Mem_Pool_Node* free_list;
+};
+
+struct Mem_Pool_Node {
+	Mem_Pool_Node* next;
+};
+
+// Initialize pool allocator with nodes of a particular size and alignment.
+// Returns success status
+bool pool_init(Mem_Pool* pool, byte* data, isize len, isize node_size, isize node_alignment);
+
+// Mark all the pool's allocations as freed
+void pool_free_all(Mem_Pool* pool);
+
+// Mark specified pointer returned by `pool_alloc` as free again
+void pool_free(Mem_Pool* pool, void* ptr);
+
+// Allocate one node from pool, returns null on failure
+void* pool_alloc(Mem_Pool* pool);
+
+// Get pool as a conforming instance to the allocator interface
+Mem_Allocator pool_allocator(Mem_Pool* pool);
 
 //// UTF-8 /////////////////////////////////////////////////////////////////////
 typedef i32 rune;
@@ -381,16 +459,16 @@ enum Logger_Option {
 
 enum Log_Level {
     Log_Debug = 0,
-    Log_Info = 1,
-    Log_Warn = 2,
+    Log_Info  = 1,
+    Log_Warn  = 2,
     Log_Error = 3,
     Log_Fatal = 4,
 };
 
 static const cstring log_level_map[] = {
     [Log_Debug] = "DEBUG",
-    [Log_Info] = "INFO",
-    [Log_Warn] = "WARN",
+    [Log_Info]  = "INFO",
+    [Log_Warn]  = "WARN",
     [Log_Error] = "ERROR",
     [Log_Fatal] = "FATAL",
 };
@@ -510,9 +588,6 @@ Time_Duration time_duration_diff(Time_Duration a, Time_Duration b);
 #define time_diff(A, B) _Generic((A), \
 	Time_Duration: time_duration_diff, \
 	Time_Point: time_point_diff)(A, B)
-
-//// Pool Allocator ////////////////////////////////////////////////////////////
-
 
 //// LibC Allocator ////////////////////////////////////////////////////////////
 // Wrapper around libc's aligned_alloc() and free()
