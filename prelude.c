@@ -55,25 +55,38 @@ void spinlock_release(Spinlock* l){
 }
 
 //// Memory ////////////////////////////////////////////////////////////////////
+#if !defined(__clang__) && !defined(__GNUC__)
+#include <string.h>
+#define mem_set_impl             memset
+#define mem_copy_impl            memmove
+#define mem_copy_no_overlap_impl memcpy
+#define mem_compare_impl         memcmp
+#else
+#define mem_set_impl             __builtin_memset
+#define mem_copy_impl            __builtin_memmove
+#define mem_copy_no_overlap_impl __builtin_memcpy
+#define mem_compare_impl         __builtin_memcmp
+#endif
+
 static inline
 bool mem_valid_alignment(isize align){
 	return (align & (align - 1)) == 0 && (align != 0);
 }
 
 void mem_set(void* p, byte val, isize nbytes){
-	__builtin_memset(p, val, nbytes);
+	mem_set_impl(p, val, nbytes);
 }
 
 void mem_copy(void* dest, void const * src, isize nbytes){
-	__builtin_memmove(dest, src, nbytes);
+	mem_copy_impl(dest, src, nbytes);
 }
 
 void mem_copy_no_overlap(void* dest, void const * src, isize nbytes){
-	__builtin_memcpy(dest, src, nbytes);
+	mem_copy_no_overlap_impl(dest, src, nbytes);
 }
 
 i32 mem_compare(void const * a, void const * b, isize nbytes){
-	return __builtin_memcmp(a, b, nbytes);
+	return mem_compare_impl(a, b, nbytes);
 }
 
 uintptr align_forward_ptr(uintptr p, uintptr a){
@@ -565,7 +578,7 @@ Console_Logger* log_create_console_logger(Mem_Allocator allocator){
 }
 
 void log_destroy_console_logger(Console_Logger* cl){
-	mem_free_ex(cl->parent_allocator, cl, sizeof(*cl), alignof(*cl));
+	mem_free_ex(cl->parent_allocator, cl, sizeof(*cl), alignof(Console_Logger));
 }
 
 Logger log_console_logger(Console_Logger* cl,u32 options){
@@ -785,7 +798,11 @@ void* libc_allocator_func (
 		*capabilities = Allocator_Align_Any | Allocator_Alloc_Any | Allocator_Free_Any;
 	break;
 	case Mem_Op_Alloc:
+#ifdef TARGET_OS_WINDOWS
+		return _aligned_malloc(align, size);
+#else
 		return aligned_alloc(align, size);
+#endif
 	case Mem_Op_Resize:
 		return null;
 	case Mem_Op_Free:

@@ -3,6 +3,11 @@
 #if defined(TARGET_OS_WINDOWS)
 	#define TARGET_OS_NAME "Windows"
 	#define WIN32_LEAN_AND_MEAN
+	#include <windows.h>
+	#include <stdlib.h>
+	#undef min
+	#undef max
+
 #elif defined(TARGET_OS_LINUX)
 	#define TARGET_OS_NAME "Linux"
 	#define _XOPEN_SOURCE 800
@@ -67,8 +72,10 @@ void swap_bytes_raw(byte* data, isize len){
 
 // This is to avoid conflict with stdlib's "abs()"
 #define abs_val(X) (( (X) < 0ll) ? -(X) : (X))
+
 #define min(A, B)  (((A) < (B)) ? (A) : (B))
 #define max(A, B)  (((A) > (B)) ? (A) : (B))
+
 #define clamp(Lo, X, Hi) min(max(Lo, X), Hi)
 
 #define container_of(Ptr, Type, Member) \
