@@ -23,16 +23,11 @@
 #include <stdalign.h>
 #include <stdnoreturn.h>
 
-#ifndef TARGET_OS_FREESTANDING
-	#ifndef TARGET_DISABLE_ATOMICS
-	#include <stdatomic.h>
-	#endif
+#include <stdatomic.h>
 #include <tgmath.h>
 #include <limits.h>
 #include <float.h>
-#endif
 
-//// Essentials ////////////////////////////////////////////////////////////////
 #define null NULL
 
 typedef int8_t  i8;
@@ -104,6 +99,7 @@ static_assert(CHAR_BIT == 8, "Invalid char size");
 typedef struct {
 	atomic_int _state;
 } Spinlock;
+
 
 // Enter a busy wait loop until spinlock is acquired(locked)
 void spinlock_acquire(Spinlock* l);

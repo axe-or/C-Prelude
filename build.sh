@@ -1,4 +1,4 @@
-cc='gcc -std=c11'
+cc='tcc -std=c11'
 cflags='-DTARGET_OS_LINUX -fPIC -fno-strict-aliasing -Wall -Wextra'
 ignoreflags='-Wno-unused-label'
 ldflags=''
