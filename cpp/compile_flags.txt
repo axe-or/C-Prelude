@@ -1,0 +1,2 @@
+-std=c++17
+-DTARGET_OS_LINUX=1

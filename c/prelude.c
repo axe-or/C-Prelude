@@ -152,6 +152,11 @@ void* mem_realloc(Mem_Allocator allocator, void* ptr, isize old_size, isize new_
 	return new_data;
 }
 
+#undef mem_set_impl
+#undef mem_copy_impl
+#undef mem_copy_no_overlap_impl
+#undef mem_compare_impl
+
 //// IO Interface //////////////////////////////////////////////////////////////
 i64 io_write(IO_Stream s, byte* buf, isize buflen){
 	return s.func(s.data, IO_Write, buf, buflen);
