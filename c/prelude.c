@@ -292,7 +292,7 @@ UTF8_Decode_Result utf8_decode(byte const* buf, isize len){
 bool utf8_iter_next(UTF8_Iterator* iter, rune* r, i8* len){
 	if(iter->current >= iter->data_length){ return 0; }
 
-	UTF8_Decode_Result res = utf8_decode(&iter->data[iter->current], iter->data_length);
+	UTF8_Decode_Result res = utf8_decode(&iter->data[iter->current], iter->data_length - iter->current);
 	*r = res.codepoint;
 	*len = res.len;
 

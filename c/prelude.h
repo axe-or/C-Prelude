@@ -357,7 +357,7 @@ typedef struct String String;
 
 struct String {
 	byte const * data;
-	isize len;
+	isize _length;
 };
 
 static inline

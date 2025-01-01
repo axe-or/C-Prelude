@@ -39,7 +39,8 @@ using u32 = uint32_t;
 using u64 = uint64_t;
 
 using uint = unsigned int;
-using byte = uint8_t ;
+using byte = uint8_t;
+using rune = i32;
 
 using isize = ptrdiff_t;
 using usize = size_t;
@@ -123,10 +124,18 @@ struct Source_Location {
 // Crash if `pred` is false, this is disabled in non-debug builds
 void debug_assert_ex(bool pred, cstring msg, Source_Location loc);
 
+void bounds_check_assert_ex(bool pred, cstring msg, Source_Location loc);
+
 #if defined(NDEBUG) || defined(RELEASE_MODE)
 #define debug_assert(Pred, Msg) ((void)0)
 #else
 #define debug_assert(Pred, Msg) debug_assert_ex(Pred, Msg, this_location())
+#endif
+
+#if defined(DISABLE_BOUNDS_CHECK)
+#define bounds_check_assert(Pred, Msg) ((void)0)
+#else
+#define bounds_check_assert(Pred, Msg) bounds_check_assert_ex(Pred, Msg, this_location())
 #endif
 
 // Crash if `pred` is false, this is always enabled
@@ -140,6 +149,59 @@ void panic_assert_ex(bool pred, cstring msg, Source_Location loc);
 // Crash the program due to unimplemented code paths, this should *only* be used
 // during development
 [[noreturn]] void unimplemented();
+
+//// Slices ////////////////////////////////////////////////////////////////////
+template<typename T>
+struct Slice {
+	T* _data;
+	isize _length;
+
+	isize size() const { return _length; }
+
+	T* raw_data() const { return _data; }
+
+	bool empty() const { return _length == 0 || _data == nullptr; }
+
+	T& operator[](isize idx) noexcept {
+		bounds_check_assert(idx >= 0 && idx < _length, "Index to slice is out of bounds");
+		return _data[idx];
+	}
+
+	T const& operator[](isize idx) const noexcept {
+		bounds_check_assert(idx >= 0 && idx < _length, "Index to slice is out of bounds");
+		return _data[idx];
+	}
+
+	// Get a sub-slice in the interval a..slice.size()
+	Slice<T> slice(isize from){
+		bounds_check_assert(from >= 0 && from < _length, "Index to sub-slice is out of bounds");
+		Slice<T> s;
+		s._length = _length - from;
+		s._data = &_data[from];
+		return s;
+	}
+
+	// Get a sub-slice in the interval a..b (end exclusive)
+	Slice<T> slice(isize from, isize to){
+		bounds_check_assert(from <= to, "Improper slicing range");
+		bounds_check_assert(from >= 0 && from < _length, "Index to sub-slice is out of bounds");
+		bounds_check_assert(to >= 0 && to <= _length, "Index to sub-slice is out of bounds");
+
+		Slice<T> s;
+		s._length = to - from;
+		s._data = &_data[from];
+		return s;
+	}
+
+	Slice() : _data{nullptr}, _length{0} {}
+
+	static Slice<T> from_pointer(T* ptr, isize len){
+		Slice<T> s;
+		s._data = ptr;
+		s._length = len;
+		return s;
+	}
+};
 
 //// Atomic ////////////////////////////////////////////////////////////////////
 // Mostly just boilerplate around C++'s standard atomic stuff but enforcing more explicit handling of memory ordering
@@ -209,7 +271,7 @@ struct Spinlock {
 };
 
 //// Memory ////////////////////////////////////////////////////////////////////
-enum class Allocator_Op {
+enum class Allocator_Op : byte {
 	Query    = 0, // Query allocator's capabilities
 	Alloc    = 1, // Allocate a chunk of memory
 	Resize   = 2, // Resize an allocation in-place
@@ -217,7 +279,7 @@ enum class Allocator_Op {
 	Free_All = 4, // Mark allocations as free
 };
 
-enum class Allocator_Capability {
+enum class Allocator_Capability : u32 {
 	Alloc_Any = 1 << 0, // Can alloc any size
 	Free_Any  = 1 << 1, // Can free in any order
 	Free_All  = 1 << 2, // Can free all allocations
@@ -228,16 +290,16 @@ enum class Allocator_Capability {
 // Memory allocator method
 using Mem_Allocator_Func = void* (*) (
 	void* impl,
-	byte op,
+	Allocator_Op op,
 	void* old_ptr,
 	isize size, isize align,
-	i32* capabilities
+	u32* capabilities
 );
 
 // Memory allocator interface
 struct Mem_Allocator {
 	void* _impl{0};
-	Mem_Allocator_Func func{0};
+	Mem_Allocator_Func _func{0};
 
 	// Get capabilities of allocator as a number, gets capability bit-set
 	u32 query_capabilites();
@@ -283,4 +345,168 @@ uintptr align_forward_ptr(uintptr p, uintptr a);
 
 // Align p to alignment a, this works for any positive non-zero alignment
 uintptr align_forward_size(isize p, isize a);
+
+//// Make & Destroy ////////////////////////////////////////////////////////////
+// Allocate one of object of a type using allocator
+template<typename T>
+T* make(Mem_Allocator al){
+	T* p = al.alloc(sizeof(T), alignof(T));
+	if(p != nullptr){
+		new (&p) T();
+	}
+	return p;
+}
+
+// Allocate slice of a type using allocator
+template<typename T>
+Slice<T> make(isize count, Mem_Allocator al){
+	T* p = al.alloc(sizeof(T) * count, alignof(T) * count);
+	if(p != nullptr){
+		for(isize i = 0; i < count; i ++){
+			new (&p[i]) T();
+		}
+	}
+	return Slice<T>::from_pointer(p, count);
+}
+
+// Deallocate object from allocator
+template<typename T>
+void destroy(T* ptr, Mem_Allocator al){
+	ptr->~T();
+	al.free(ptr);
+}
+
+// Deallocate slice from allocator
+template<typename T>
+void destroy(Slice<T> s, Mem_Allocator al){
+	isize n = s.size();
+	T* ptr = s.raw_data();
+	for(isize i = 0; i < n; i ++){
+		ptr[i]->~T();
+	}
+	al.free(ptr);
+}
+
+//// UTF-8 /////////////////////////////////////////////////////////////////////
+namespace utf8 {
+
+// UTF-8 encoding result, a len = 0 means an error.
+struct Encode_Result {
+	byte bytes[4];
+	i8 len;
+};
+
+// UTF-8 encoding result, a len = 0 means an error.
+struct Decode_Result {
+	rune codepoint;
+	i8 len;
+};
+
+// The error rune
+constexpr rune ERROR = 0xfffd;
+
+// The error rune, byte encoded
+constexpr Encode_Result ERROR_ENCODED = {
+	.bytes = {0xef, 0xbf, 0xbd},
+	.len = 0,
+};
+
+// Encode a unicode codepoint
+Encode_Result encode(rune c);
+
+// Decode a codepoint from a UTF8 buffer of bytes
+Decode_Result utf8_decode(Slice<byte> buf);
+
+// Allows to iterate a stream of bytes as a sequence of runes
+struct Iterator {
+	Slice<byte> data;
+	isize current;
+
+	// Steps iterator forward and puts rune and length advanced into pointers,
+	// returns false when finished.
+	bool next(rune* r, i8* len);
+
+	// Steps iterator backward and puts rune and its length into pointers,
+	// returns false when finished.
+	bool prev(rune* r, i8* len);
+};
+
+} /* Namespace utf8 */
+
+//// Strings ///////////////////////////////////////////////////////////////////
+#if 0
+static inline isize cstring_len(cstring cstr);
+
+struct String {
+	byte const * _data;
+	isize _length;
+
+	// Size (in bytes)
+	isize size() const;
+
+	// Size (in codepoints)
+	isize rune_count() const;
+
+	// Create a substring
+	String sub(isize start, isize length);
+
+	// Create string from C-style string
+	static String from_cstr(cstring data);
+
+	// Create string from a piece of a C-style string
+	static String from_cstr(cstring data, isize start, isize length);
+
+	// Create string from a raw byte pointer
+	static String from_pointer(byte const* data, isize length);
+
+	// Check if 2 strings are equal
+	bool operator==(String lhs) const {
+		if(lhs._length != _length){ return false; }
+		return mem_compare(_data, lhs._data, _length) == 0;
+	}
+};
+
+static inline
+isize cstring_len(cstring cstr){
+	constexpr isize CSTR_MAX_LENGTH = (~(u32)0) >> 1;
+	isize size = 0;
+	for(isize i = 0; i < CSTR_MAX_LENGTH && cstr[i] != 0; i += 1){
+		size += 1;
+	}
+	return size;
+}
+
+// Get the byte offset of the n-th codepoint
+isize str_codepoint_offset(String s, isize n);
+
+// Clone a string
+String str_clone(String s, Mem_Allocator allocator);
+
+// Destroy a string
+void str_destroy(String s, Mem_Allocator allocator);
+
+// Concatenate 2 strings
+String str_concat(String a, String b, Mem_Allocator allocator);
+
+// Trim leading codepoints that belong to the cutset
+String str_trim_leading(String s, String cutset);
+
+// Trim trailing codepoints that belong to the cutset
+String str_trim_trailing(String s, String cutset);
+
+// Trim leading and trailing codepoints
+String str_trim(String s, String cutset);
+
+// Check if string starts with a prefix
+bool str_starts_with(String s, String prefix);
+
+// Check if string ends with a suffix
+bool str_ends_with(String s, String suffix);
+
+// Get an utf8 iterator from string
+// UTF8_Iterator str_iterator(String s);
+
+// Get an utf8 iterator from string, already at the end, to be used for reverse iteration
+// UTF8_Iterator str_iterator_reversed(String s);
+#endif
 
