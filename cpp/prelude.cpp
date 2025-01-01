@@ -1,22 +1,27 @@
 #include "prelude.hpp"
 
 //// Spinlock //////////////////////////////////////////////////////////////////
+namespace sync {
+using atomic::Memory_Order;
+
 void Spinlock::acquire(){
 	for(;;){
-		if(!atomic_exchange(&_state, SPINLOCK_LOCKED, Memory_Order::Acquire)){
+		if(!atomic::exchange(&_state, SPINLOCK_LOCKED, Memory_Order::Acquire)){
 			break;
 		}
 		/* Busy wait while locked */
-		while(atomic_load(&_state, Memory_Order::Relaxed));
+		while(atomic::load(&_state, Memory_Order::Relaxed));
 	}
 }
 
 bool Spinlock::try_acquire(){
-    return !atomic_exchange(&_state, SPINLOCK_LOCKED, Memory_Order::Acquire);
+    return !atomic::load(&_state, Memory_Order::Relaxed) &&
+		!atomic::exchange(&_state, SPINLOCK_LOCKED, Memory_Order::Acquire);
 }
 
 void Spinlock::release(){
-	atomic_store(&_state, SPINLOCK_UNLOCKED);
+	atomic::store(&_state, SPINLOCK_UNLOCKED, Memory_Order::Release);
+}
 }
 
 //// Assert ////////////////////////////////////////////////////////////////////

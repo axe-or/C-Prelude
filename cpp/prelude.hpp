@@ -205,6 +205,7 @@ struct Slice {
 
 //// Atomic ////////////////////////////////////////////////////////////////////
 // Mostly just boilerplate around C++'s standard atomic stuff but enforcing more explicit handling of memory ordering
+namespace atomic {
 enum class Memory_Order : u32 {
     Relaxed = std::memory_order_relaxed,
 	Consume = std::memory_order_consume,
@@ -218,47 +219,48 @@ template<typename T>
 using Atomic = std::atomic<T>;
 
 template<typename T>
-T atomic_exchange(volatile Atomic<T> * ptr, T desired, Memory_Order order){
+T exchange(volatile Atomic<T> * ptr, T desired, Memory_Order order = Memory_Order::Seq_Cst){
 	return std::atomic_exchange_explicit<T>(ptr, desired, (std::memory_order)order);
 }
 
-template<typename T>
-bool atomic_compare_exchange_strong(Atomic<T> * ptr, std::atomic<T> * expected, T desired, Memory_Order order, Memory_Order failure_order = Memory_Order::Seq_Cst){
-	return std::atomic_compare_exchange_strong_explicit(ptr, expected, desired, (std::memory_order)order, (std::memory_order)failure_order);
+template <typename T>
+bool compare_exchange_strong(Atomic<T> *ptr, std::atomic<T> *expected, T desired, Memory_Order order = Memory_Order::Seq_Cst, Memory_Order failure_order = Memory_Order::Seq_Cst) {
+  return std::atomic_compare_exchange_strong_explicit(ptr, expected, desired, (std::memory_order)order, (std::memory_order)failure_order);
 }
 template<typename T>
-bool atomic_compare_exchange_strong(volatile Atomic<T> * ptr, std::atomic<T> * expected, T desired, Memory_Order order, Memory_Order failure_order = Memory_Order::Seq_Cst){
+bool compare_exchange_strong(volatile Atomic<T> * ptr, std::atomic<T> * expected, T desired, Memory_Order order = Memory_Order::Seq_Cst, Memory_Order failure_order = Memory_Order::Seq_Cst){
 	return std::atomic_compare_exchange_strong_explicit(ptr, expected, desired, (std::memory_order)order, (std::memory_order)failure_order);
 }
 
 template<typename T>
-void atomic_store(Atomic<T> * ptr, T desired, Memory_Order order){
+void store(Atomic<T> * ptr, T desired, Memory_Order order = Memory_Order::Seq_Cst){
 	return std::atomic_store_explicit<T>(ptr, desired, (std::memory_order)order);
 }
 template<typename T>
-void atomic_store(volatile Atomic<T> * ptr, T desired, Memory_Order order){
+void store(volatile Atomic<T> * ptr, T desired, Memory_Order order = Memory_Order::Seq_Cst){
 	return std::atomic_store_explicit<T>(ptr, desired, (std::memory_order)order);
 }
 
 template<typename T>
-T atomic_load(Atomic<T> const * ptr, Memory_Order order){
+T load(Atomic<T> const * ptr, Memory_Order order = Memory_Order::Seq_Cst){
 	return std::atomic_load_explicit<T>(ptr, (std::memory_order)order);
 }
 template<typename T>
-T atomic_load(volatile Atomic<T> const * ptr, Memory_Order order){
+T load(volatile Atomic<T> const * ptr, Memory_Order order = Memory_Order::Seq_Cst){
 	return std::atomic_load_explicit<T>(ptr, (std::memory_order)order);
 }
-
+}
 
 //// Spinlock //////////////////////////////////////////////////////////////////
-constexpr int SPINLOCK_LOCKED = 1;
+namespace sync {
 constexpr int SPINLOCK_UNLOCKED = 0;
+constexpr int SPINLOCK_LOCKED = 1;
 
 // The zeroed state of a spinlock is unlocked, to be effective across threads
 // it's important to keep the spinlock outside of the stack and never mark it as
 // a thread_local struct.
 struct Spinlock {
-	Atomic<int> _state{0};
+	atomic::Atomic<int> _state{0};
 
 	// Enter a busy wait loop until spinlock is acquired(locked)
 	void acquire();
@@ -269,6 +271,9 @@ struct Spinlock {
 	// Release(unlock) the spinlock
 	void release();
 };
+
+// TODO: futex
+}
 
 //// Memory ////////////////////////////////////////////////////////////////////
 enum class Allocator_Op : byte {
