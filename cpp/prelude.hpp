@@ -174,7 +174,7 @@ struct Slice {
 	}
 
 	// Get a sub-slice in the interval a..slice.size()
-	Slice<T> slice(isize from){
+	Slice<T> sub(isize from){
 		bounds_check_assert(from >= 0 && from < _length, "Index to sub-slice is out of bounds");
 		Slice<T> s;
 		s._length = _length - from;
@@ -183,7 +183,7 @@ struct Slice {
 	}
 
 	// Get a sub-slice in the interval a..b (end exclusive)
-	Slice<T> slice(isize from, isize to){
+	Slice<T> sub(isize from, isize to){
 		bounds_check_assert(from <= to, "Improper slicing range");
 		bounds_check_assert(from >= 0 && from < _length, "Index to sub-slice is out of bounds");
 		bounds_check_assert(to >= 0 && to <= _length, "Index to sub-slice is out of bounds");
@@ -203,6 +203,52 @@ struct Slice {
 		return s;
 	}
 };
+
+
+
+//// IO Interface //////////////////////////////////////////////////////////////
+namespace io {
+enum class Stream_Op {
+	Query = 0,
+	Read  = 1,
+	Write = 2,
+};
+
+enum class Stream_Error {
+	None          = 0,
+	End_Of_Stream = -1,
+	Unsupported   = -2,
+	Memory_Error  = -3,
+	Broken_Handle = -4,
+};
+
+enum class Stream_Capability {
+	Read  = 1 << 0,
+	Write = 1 << 1,
+};
+
+// Function that represents a read or write operation. Returns number of bytes
+// read into buf, returns a negative number indicating error if any.
+typedef i64 (*Stream_Func)(
+	void* impl,
+	Stream_Op op,
+	Slice<byte> buf);
+
+// Stream interface for IO operations.
+struct Stream {
+	void* _data;
+	Stream_Func _func;
+
+	// Read from stream into buf. Returns number of bytes read or (if negative) an error code.
+	i64 read(Slice<byte> buf);
+
+	// Write buf into stream. Returns number of bytes written or (if negative) an error code.
+	i64 write(Slice<byte> buf);
+
+	// Get stream object's capabilities
+	u8 capabilities(Stream s);
+};
+} /* Namespace io */
 
 //// Atomic ////////////////////////////////////////////////////////////////////
 // Mostly just boilerplate around C++'s standard atomic stuff but enforcing more explicit handling of memory ordering
@@ -272,10 +318,10 @@ struct Spinlock {
 	// Release(unlock) the spinlock
 	void release();
 };
-
 }
 
 //// Memory ////////////////////////////////////////////////////////////////////
+namespace mem {
 enum class Allocator_Op : byte {
 	Query    = 0, // Query allocator's capabilities
 	Alloc    = 1, // Allocate a chunk of memory
@@ -293,7 +339,7 @@ enum class Allocator_Capability : u32 {
 };
 
 // Memory allocator method
-using Mem_Allocator_Func = void* (*) (
+using Allocator_Func = void* (*) (
 	void* impl,
 	Allocator_Op op,
 	void* old_ptr,
@@ -302,9 +348,9 @@ using Mem_Allocator_Func = void* (*) (
 );
 
 // Memory allocator interface
-struct Mem_Allocator {
+struct Allocator {
 	void* _impl{0};
-	Mem_Allocator_Func _func{0};
+	Allocator_Func _func{0};
 
 	// Get capabilities of allocator as a number, gets capability bit-set
 	u32 query_capabilites();
@@ -332,18 +378,18 @@ struct Mem_Allocator {
 };
 
 // Set n bytes of p to value.
-void mem_set(void* p, byte val, isize nbytes);
+void set(void* p, byte val, isize nbytes);
 
 // Copy n bytes for source to destination, they may overlap.
-void mem_copy(void* dest, void const * src, isize nbytes);
+void copy(void* dest, void const * src, isize nbytes);
 
 // Compare 2 buffers of memory, returns -1, 0, 1 depending on which buffer shows
 // a bigger byte first, 0 meaning equality.
-i32 mem_compare(void const * a, void const * b, isize nbytes);
+i32 compare(void const * a, void const * b, isize nbytes);
 
 // Copy n bytes for source to destination, they should not overlap, this tends
 // to be faster then mem_copy
-void mem_copy_no_overlap(void* dest, void const * src, isize nbytes);
+void copy_no_overlap(void* dest, void const * src, isize nbytes);
 
 // Align p to alignment a, this only works if a is a non-zero power of 2
 uintptr align_forward_ptr(uintptr p, uintptr a);
@@ -351,10 +397,13 @@ uintptr align_forward_ptr(uintptr p, uintptr a);
 // Align p to alignment a, this works for any positive non-zero alignment
 uintptr align_forward_size(isize p, isize a);
 
+// A view is basically a slice, but read-only. Generally you just want a slice.
+} /* Namespace mem */
+
 //// Make & Destroy ////////////////////////////////////////////////////////////
 // Allocate one of object of a type using allocator
 template<typename T>
-T* make(Mem_Allocator al){
+T* make(mem::Allocator al){
 	T* p = al.alloc(sizeof(T), alignof(T));
 	if(p != nullptr){
 		new (&p) T();
@@ -364,7 +413,7 @@ T* make(Mem_Allocator al){
 
 // Allocate slice of a type using allocator
 template<typename T>
-Slice<T> make(isize count, Mem_Allocator al){
+Slice<T> make(isize count, mem::Allocator al){
 	T* p = al.alloc(sizeof(T) * count, alignof(T) * count);
 	if(p != nullptr){
 		for(isize i = 0; i < count; i ++){
@@ -376,14 +425,14 @@ Slice<T> make(isize count, Mem_Allocator al){
 
 // Deallocate object from allocator
 template<typename T>
-void destroy(T* ptr, Mem_Allocator al){
+void destroy(T* ptr, mem::Allocator al){
 	ptr->~T();
 	al.free(ptr);
 }
 
 // Deallocate slice from allocator
 template<typename T>
-void destroy(Slice<T> s, Mem_Allocator al){
+void destroy(Slice<T> s, mem::Allocator al){
 	isize n = s.size();
 	T* ptr = s.raw_data();
 	for(isize i = 0; i < n; i ++){
@@ -439,9 +488,6 @@ struct Iterator {
 } /* Namespace utf8 */
 
 //// Strings ///////////////////////////////////////////////////////////////////
-#if 0
-static inline isize cstring_len(cstring cstr);
-
 struct String {
 	byte const * _data;
 	isize _length;
@@ -464,10 +510,16 @@ struct String {
 	// Create string from a raw byte pointer
 	static String from_pointer(byte const* data, isize length);
 
+	// Get an utf8 iterator from string
+	utf8::Iterator iterator();
+
+	// Get an utf8 iterator from string, already at the end, to be used for reverse iteration
+	utf8::Iterator iterator_reversed();
+
 	// Check if 2 strings are equal
 	bool operator==(String lhs) const {
 		if(lhs._length != _length){ return false; }
-		return mem_compare(_data, lhs._data, _length) == 0;
+		return mem::compare(_data, lhs._data, _length) == 0;
 	}
 };
 
@@ -481,37 +533,31 @@ isize cstring_len(cstring cstr){
 	return size;
 }
 
-// Get the byte offset of the n-th codepoint
-isize str_codepoint_offset(String s, isize n);
-
-// Clone a string
-String str_clone(String s, Mem_Allocator allocator);
-
-// Destroy a string
-void str_destroy(String s, Mem_Allocator allocator);
-
-// Concatenate 2 strings
-String str_concat(String a, String b, Mem_Allocator allocator);
-
-// Trim leading codepoints that belong to the cutset
-String str_trim_leading(String s, String cutset);
-
-// Trim trailing codepoints that belong to the cutset
-String str_trim_trailing(String s, String cutset);
-
-// Trim leading and trailing codepoints
-String str_trim(String s, String cutset);
-
-// Check if string starts with a prefix
-bool str_starts_with(String s, String prefix);
-
-// Check if string ends with a suffix
-bool str_ends_with(String s, String suffix);
-
-// Get an utf8 iterator from string
-// UTF8_Iterator str_iterator(String s);
-
-// Get an utf8 iterator from string, already at the end, to be used for reverse iteration
-// UTF8_Iterator str_iterator_reversed(String s);
-#endif
+// // Get the byte offset of the n-th codepoint
+// isize str_codepoint_offset(String s, isize n);
+//
+// // Clone a string
+// String str_clone(String s, mem::Allocator allocator);
+//
+// // Destroy a string
+// void str_destroy(String s, mem::Allocator allocator);
+//
+// // Concatenate 2 strings
+// String str_concat(String a, String b, mem::Allocator allocator);
+//
+// // Trim leading codepoints that belong to the cutset
+// String str_trim_leading(String s, String cutset);
+//
+// // Trim trailing codepoints that belong to the cutset
+// String str_trim_trailing(String s, String cutset);
+//
+// // Trim leading and trailing codepoints
+// String str_trim(String s, String cutset);
+//
+// // Check if string starts with a prefix
+// bool str_starts_with(String s, String prefix);
+//
+// // Check if string ends with a suffix
+// bool str_ends_with(String s, String suffix);
+//
 

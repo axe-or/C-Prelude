@@ -80,29 +80,30 @@ void unimplemented(){
 #define mem_compare_impl         __builtin_memcmp
 #endif
 
+namespace mem {
 static inline
-bool mem_valid_alignment(isize align){
+bool valid_alignment(isize align){
 	return (align & (align - 1)) == 0 && (align != 0);
 }
 
-void mem_set(void* p, byte val, isize nbytes){
+void set(void* p, byte val, isize nbytes){
 	mem_set_impl(p, val, nbytes);
 }
 
-void mem_copy(void* dest, void const * src, isize nbytes){
+void copy(void* dest, void const * src, isize nbytes){
 	mem_copy_impl(dest, src, nbytes);
 }
 
-void mem_copy_no_overlap(void* dest, void const * src, isize nbytes){
+void copy_no_overlap(void* dest, void const * src, isize nbytes){
 	mem_copy_no_overlap_impl(dest, src, nbytes);
 }
 
-i32 mem_compare(void const * a, void const * b, isize nbytes){
+i32 compare(void const * a, void const * b, isize nbytes){
 	return mem_compare_impl(a, b, nbytes);
 }
 
 uintptr align_forward_ptr(uintptr p, uintptr a){
-	debug_assert(mem_valid_alignment(a), "Invalid memory alignment");
+	debug_assert(valid_alignment(a), "Invalid memory alignment");
 	uintptr mod = p & (a - 1);
 	if(mod > 0){
 		p += (a - mod);
@@ -119,33 +120,33 @@ uintptr align_forward_size(isize p, isize a){
 	return p;
 }
 
-u32 Mem_Allocator::query_capabilites(){
+u32 Allocator::query_capabilites(){
 	u32 n = 0;
 	_func(_impl, Allocator_Op::Query, nullptr, 0, 0, &n);
 	return n;
 }
 
-void* Mem_Allocator::alloc(isize size, isize align){
+void* Allocator::alloc(isize size, isize align){
 	return _func(_impl, Allocator_Op::Alloc, nullptr, size, align, nullptr);
 }
 
-void* Mem_Allocator::resize(void* ptr, isize new_size){
+void* Allocator::resize(void* ptr, isize new_size){
 	return _func(_impl, Allocator_Op::Resize, ptr, new_size, 0, nullptr);
 }
 
-void Mem_Allocator::free_ex(void* ptr, isize size, isize align){
+void Allocator::free_ex(void* ptr, isize size, isize align){
 	_func(_impl, Allocator_Op::Free, ptr, size, align, nullptr);
 }
 
-void Mem_Allocator::free(void* ptr){
+void Allocator::free(void* ptr){
 	_func(_impl, Allocator_Op::Free, ptr, 0, 0, nullptr);
 }
 
-void Mem_Allocator::free_all(){
+void Allocator::free_all(){
 	_func(_impl, Allocator_Op::Free_All, nullptr, 0, 0, nullptr);
 }
 
-void* Mem_Allocator::realloc(void* ptr, isize old_size, isize new_size, isize align){
+void* Allocator::realloc(void* ptr, isize old_size, isize new_size, isize align){
 	if(ptr == nullptr){ return nullptr; }
 
 	void* resized_p = this->resize(ptr, new_size);
@@ -158,15 +159,32 @@ void* Mem_Allocator::realloc(void* ptr, isize old_size, isize new_size, isize al
 		return nullptr;
 	}
 
-	mem_copy(resized_p, ptr, old_size);
+	copy(resized_p, ptr, old_size);
 	this->free(ptr);
 	return resized_p;
 }
+} /* Namespace mem */
 
 #undef mem_set_impl
 #undef mem_copy_impl
 #undef mem_copy_no_overlap_impl
 #undef mem_compare_impl
+
+//// IO Interface //////////////////////////////////////////////////////////////
+namespace io {
+i64 Stream::read(Slice<byte> buf){
+	return _func(_data, Stream_Op::Read, buf);
+}
+
+i64 Stream::write(Slice<byte> buf){
+	return _func(_data, Stream_Op::Write, buf);
+}
+
+u8 Stream::capabilities(Stream s){
+	u8 c = _func(_data, Stream_Op::Query, Slice<byte>());
+	return c;
+}
+} /* Namespace io */
 
 //// UTF-8 /////////////////////////////////////////////////////////////////////
 namespace utf8 {
@@ -291,7 +309,7 @@ Decode_Result decode(Slice<byte> s){
 bool Iterator::next(rune* r, i8* len){
 	if(this->current >= this->data.size()){ return 0; }
 
-	Decode_Result res = decode(this->data.slice(current));
+	Decode_Result res = decode(this->data.sub(current));
 	*r = res.codepoint;
 	*len = res.len;
 
@@ -314,10 +332,52 @@ bool Iterator::prev(rune* r, i8* len){
 		this->current -= 1;
 	}
 
-	Decode_Result res = decode(this->data.slice(current));
+	Decode_Result res = decode(this->data.sub(current));
 	*r = res.codepoint;
 	*len = res.len;
 	return true;
 }
 } /* Namespace utf8 */
 
+//// Strings ///////////////////////////////////////////////////////////////////
+isize String::size() const {
+	return _length;
+}
+
+// UTF8_Iterator str_iterator(String s){
+// }
+//
+// UTF8_Iterator str_iterator_reversed(String s){
+// 	return (UTF8_Iterator){
+// 		.current = s.len,
+// 		.data_length = s.len,
+// 		.data = s.data,
+// 	};
+// }
+
+utf8::Iterator String::iterator(){
+	return {
+		.data = Slice<byte>::from_pointer((byte*)_data, _length),
+		.current = 0,
+	};
+}
+
+utf8::Iterator String::iterator_reversed(){
+	return {
+		.data = Slice<byte>::from_pointer((byte*)_data, _length),
+		.current = _length,
+	};
+}
+
+utf8::Iterator str_iterator_reversed(String s);
+
+isize String::rune_count() const {
+}
+
+String String::sub(isize start, isize length);
+
+String String::from_cstr(cstring data){}
+
+String String::from_cstr(cstring data, isize start, isize length);
+
+String String::from_pointer(byte const* data, isize length);

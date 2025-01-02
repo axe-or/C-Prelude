@@ -201,13 +201,13 @@ void* mem_realloc(Mem_Allocator allocator, void* ptr, isize old_size, isize new_
 //// IO Interface //////////////////////////////////////////////////////////////
 typedef struct IO_Stream IO_Stream;
 
-enum IO_Op {
+enum Stream_Op {
 	IO_Query = 0,
 	IO_Read  = 1,
 	IO_Write = 2,
 };
 
-enum IO_Error {
+enum Stream_Error {
 	IO_Err_None          = 0,
 	IO_Err_End_Of_Stream = -1,
 	IO_Err_Unsupported   = -2,
@@ -215,7 +215,7 @@ enum IO_Error {
 	IO_Err_Broken_Handle = -4,
 };
 
-enum IO_Capability {
+enum Stream_Capability {
 	IO_Stream_Read  = 1 << 0,
 	IO_Stream_Write = 1 << 1,
 };
